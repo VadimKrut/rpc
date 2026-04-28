@@ -1,0 +1,397 @@
+package ru.pathcreator.pyc.rpc.client;
+
+import org.agrona.concurrent.UnsafeBuffer;
+import org.junit.jupiter.api.Test;
+import ru.pathcreator.pyc.rpc.client.call.RpcClientCall;
+import ru.pathcreator.pyc.rpc.client.fixture.ClientEchoRequest;
+import ru.pathcreator.pyc.rpc.client.fixture.ClientEchoResponse;
+import ru.pathcreator.pyc.rpc.client.method.RpcClientMethod;
+import ru.pathcreator.pyc.rpc.client.response.RpcClientResult;
+import ru.pathcreator.pyc.rpc.core.RpcChannel;
+import ru.pathcreator.pyc.rpc.core.RpcRuntime;
+import ru.pathcreator.pyc.rpc.core.codex.RpcEnvelope;
+import ru.pathcreator.pyc.rpc.core.codex.RpcStatusCodes;
+import ru.pathcreator.pyc.rpc.core.config.RpcChannelConfig;
+import ru.pathcreator.pyc.rpc.core.exception.RpcCallTimeoutException;
+import ru.pathcreator.pyc.rpc.core.exception.RpcRemoteException;
+import ru.pathcreator.pyc.rpc.server.RpcServer;
+import ru.pathcreator.pyc.rpc.server.error.RpcStatusException;
+import ru.pathcreator.pyc.rpc.server.handler.RpcServerMethod;
+
+import java.util.Locale;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+final class RpcClientTest {
+
+    private static final long DEFAULT_TIMEOUT_NS = 5_000_000_000L;
+    private static final int REQUEST_MESSAGE_TYPE_ID = 701;
+    private static final int RESPONSE_MESSAGE_TYPE_ID = 801;
+    private static final AtomicInteger PORTS = new AtomicInteger(29_000);
+    private static final AtomicInteger STREAMS = new AtomicInteger(5_000);
+
+    @Test
+    void shouldSendTypedRequestAndReceiveTypedResponse() {
+        try (ChannelPair pair = openChannels()) {
+            final RpcServer server = RpcServer.builder(pair.serverChannel()).build();
+            final RpcServerMethod<ClientEchoRequest, ClientEchoResponse> serverMethod = RpcServerMethod.of(
+                    "client.echo",
+                    ClientEchoRequest.class,
+                    ClientEchoResponse.class,
+                    REQUEST_MESSAGE_TYPE_ID,
+                    RESPONSE_MESSAGE_TYPE_ID
+            );
+            server.register(serverMethod, request -> new ClientEchoResponse(
+                    request.requestId(),
+                    request.message().toUpperCase(Locale.ROOT),
+                    request.amount() + 10
+            ));
+
+            final RpcClient client = RpcClient.builder(pair.clientChannel())
+                    .defaultTimeoutNs(DEFAULT_TIMEOUT_NS)
+                    .build();
+            final RpcClientMethod<ClientEchoRequest, ClientEchoResponse> method = RpcClientMethod.of(
+                    "client.echo",
+                    ClientEchoRequest.class,
+                    ClientEchoResponse.class,
+                    REQUEST_MESSAGE_TYPE_ID,
+                    RESPONSE_MESSAGE_TYPE_ID
+            );
+
+            final ClientEchoRequest request = new ClientEchoRequest(UUID.randomUUID(), "hello", 7);
+            final ClientEchoResponse response = client.send(method, request);
+            assertEquals(new ClientEchoResponse(request.requestId(), "HELLO", 17), response);
+        }
+    }
+
+    @Test
+    void shouldSupportBoundCallAndClientContext() {
+        try (ChannelPair pair = openChannels()) {
+            final RpcServer server = RpcServer.builder(pair.serverChannel()).build();
+            final RpcServerMethod<ClientEchoRequest, ClientEchoResponse> serverMethod = RpcServerMethod.of(
+                    "client.bound",
+                    ClientEchoRequest.class,
+                    ClientEchoResponse.class,
+                    REQUEST_MESSAGE_TYPE_ID,
+                    RESPONSE_MESSAGE_TYPE_ID
+            );
+            server.register(serverMethod, request -> new ClientEchoResponse(
+                    request.requestId(),
+                    request.message().toUpperCase(Locale.ROOT),
+                    request.amount()
+            ));
+
+            final AtomicLong seenTimeout = new AtomicLong();
+            final RpcClient client = RpcClient.builder(pair.clientChannel())
+                    .interceptor((context, request, invocation) -> {
+                        seenTimeout.set(context.timeoutNs());
+                        return invocation.proceed(context, request);
+                    })
+                    .build();
+            final RpcClientMethod<ClientEchoRequest, ClientEchoResponse> method = RpcClientMethod.of(
+                    "client.bound",
+                    ClientEchoRequest.class,
+                    ClientEchoResponse.class,
+                    REQUEST_MESSAGE_TYPE_ID,
+                    RESPONSE_MESSAGE_TYPE_ID
+            );
+            final RpcClientCall<ClientEchoRequest, ClientEchoResponse> call = client.bind(method);
+
+            final ClientEchoResponse response = call.send(
+                    new ClientEchoRequest(UUID.randomUUID(), "hello", 7),
+                    123_456_789L
+            );
+            assertEquals("HELLO", response.message());
+            assertEquals(123_456_789L, seenTimeout.get());
+        }
+    }
+
+    @Test
+    void shouldExposeRemoteErrorAsStructuredClientResult() {
+        try (ChannelPair pair = openChannels()) {
+            final RpcServer server = RpcServer.builder(pair.serverChannel()).build();
+            final RpcServerMethod<ClientEchoRequest, ClientEchoResponse> serverMethod = RpcServerMethod.of(
+                    "client.bad-request",
+                    ClientEchoRequest.class,
+                    ClientEchoResponse.class,
+                    REQUEST_MESSAGE_TYPE_ID,
+                    RESPONSE_MESSAGE_TYPE_ID
+            );
+            server.register(serverMethod, request -> {
+                throw new RpcStatusException(RpcStatusCodes.BAD_REQUEST, "message must not be blank");
+            });
+
+            final RpcClient client = RpcClient.builder(pair.clientChannel()).build();
+            final RpcClientMethod<ClientEchoRequest, ClientEchoResponse> method = RpcClientMethod.of(
+                    "client.bad-request",
+                    ClientEchoRequest.class,
+                    ClientEchoResponse.class,
+                    REQUEST_MESSAGE_TYPE_ID,
+                    RESPONSE_MESSAGE_TYPE_ID
+            );
+
+            final RpcClientResult<ClientEchoResponse> result = client.exchange(
+                    method,
+                    new ClientEchoRequest(UUID.randomUUID(), "", 1)
+            );
+
+            assertFalse(result.isSuccess());
+            assertEquals(RpcStatusCodes.BAD_REQUEST, result.statusCode());
+            assertEquals(RESPONSE_MESSAGE_TYPE_ID, result.responseMessageTypeId());
+            assertNull(result.response());
+            assertEquals("message must not be blank", result.errorMessage());
+            assertTrue(result.correlationId() > 0L);
+        }
+    }
+
+    @Test
+    void shouldThrowRpcRemoteExceptionOnConvenienceSend() {
+        try (ChannelPair pair = openChannels()) {
+            final RpcServer server = RpcServer.builder(pair.serverChannel()).build();
+            final RpcServerMethod<ClientEchoRequest, ClientEchoResponse> serverMethod = RpcServerMethod.of(
+                    "client.method-not-allowed",
+                    ClientEchoRequest.class,
+                    ClientEchoResponse.class,
+                    REQUEST_MESSAGE_TYPE_ID,
+                    RESPONSE_MESSAGE_TYPE_ID
+            );
+            server.register(serverMethod, request -> {
+                throw new RpcStatusException(RpcStatusCodes.METHOD_NOT_ALLOWED, "method not allowed");
+            });
+
+            final RpcClient client = RpcClient.builder(pair.clientChannel()).build();
+            final RpcClientMethod<ClientEchoRequest, ClientEchoResponse> method = RpcClientMethod.of(
+                    "client.method-not-allowed",
+                    ClientEchoRequest.class,
+                    ClientEchoResponse.class,
+                    REQUEST_MESSAGE_TYPE_ID,
+                    RESPONSE_MESSAGE_TYPE_ID
+            );
+
+            final RpcRemoteException error = assertThrows(
+                    RpcRemoteException.class,
+                    () -> client.send(method, new ClientEchoRequest(UUID.randomUUID(), "nope", 1))
+            );
+            assertEquals(RpcStatusCodes.METHOD_NOT_ALLOWED, error.statusCode());
+            assertEquals(RESPONSE_MESSAGE_TYPE_ID, error.responseMessageTypeId());
+            assertEquals("method not allowed", error.getMessage());
+            assertTrue(error.correlationId() > 0L);
+        }
+    }
+
+    @Test
+    void shouldValidateRequestBeforeSend() {
+        try (ChannelPair pair = openChannels()) {
+            final AtomicInteger interceptorCalls = new AtomicInteger();
+            final RpcClient client = RpcClient.builder(pair.clientChannel())
+                    .requestValidator((context, request) -> {
+                        final ClientEchoRequest typedRequest = (ClientEchoRequest) request;
+                        if (typedRequest.message().isBlank()) {
+                            throw new IllegalArgumentException(
+                                    context.method().name() + ": message must not be blank"
+                            );
+                        }
+                    })
+                    .interceptor((context, request, invocation) -> {
+                        interceptorCalls.incrementAndGet();
+                        return invocation.proceed(context, request);
+                    })
+                    .build();
+            final RpcClientMethod<ClientEchoRequest, ClientEchoResponse> method = RpcClientMethod.of(
+                    "client.validated",
+                    ClientEchoRequest.class,
+                    ClientEchoResponse.class,
+                    REQUEST_MESSAGE_TYPE_ID,
+                    RESPONSE_MESSAGE_TYPE_ID
+            );
+
+            final IllegalArgumentException error = assertThrows(
+                    IllegalArgumentException.class,
+                    () -> client.send(method, new ClientEchoRequest(UUID.randomUUID(), "", 1))
+            );
+            assertEquals("client.validated: message must not be blank", error.getMessage());
+            assertEquals(0, interceptorCalls.get());
+        }
+    }
+
+    @Test
+    void shouldValidateResponseAfterExchange() {
+        try (ChannelPair pair = openChannels()) {
+            final RpcServer server = RpcServer.builder(pair.serverChannel()).build();
+            final RpcServerMethod<ClientEchoRequest, ClientEchoResponse> serverMethod = RpcServerMethod.of(
+                    "client.response-validated",
+                    ClientEchoRequest.class,
+                    ClientEchoResponse.class,
+                    REQUEST_MESSAGE_TYPE_ID,
+                    RESPONSE_MESSAGE_TYPE_ID
+            );
+            server.register(serverMethod, request -> new ClientEchoResponse(
+                    request.requestId(),
+                    request.message(),
+                    -1
+            ));
+
+            final RpcClient client = RpcClient.builder(pair.clientChannel())
+                    .responseValidator((context, result) -> {
+                        final ClientEchoResponse response = (ClientEchoResponse) result.response();
+                        if (result.isSuccess() && response.amount() < 0) {
+                            throw new IllegalStateException(context.method().name() + ": negative amount");
+                        }
+                    })
+                    .build();
+            final RpcClientMethod<ClientEchoRequest, ClientEchoResponse> method = RpcClientMethod.of(
+                    "client.response-validated",
+                    ClientEchoRequest.class,
+                    ClientEchoResponse.class,
+                    REQUEST_MESSAGE_TYPE_ID,
+                    RESPONSE_MESSAGE_TYPE_ID
+            );
+
+            final IllegalStateException error = assertThrows(
+                    IllegalStateException.class,
+                    () -> client.exchange(method, new ClientEchoRequest(UUID.randomUUID(), "hello", 1))
+            );
+            assertEquals("client.response-validated: negative amount", error.getMessage());
+        }
+    }
+
+    @Test
+    void shouldApplyInterceptorsAroundTransportInOrder() {
+        try (ChannelPair pair = openChannels()) {
+            final RpcServer server = RpcServer.builder(pair.serverChannel()).build();
+            final RpcServerMethod<ClientEchoRequest, ClientEchoResponse> serverMethod = RpcServerMethod.of(
+                    "client.intercepted",
+                    ClientEchoRequest.class,
+                    ClientEchoResponse.class,
+                    REQUEST_MESSAGE_TYPE_ID,
+                    RESPONSE_MESSAGE_TYPE_ID
+            );
+            server.register(serverMethod, request -> new ClientEchoResponse(
+                    request.requestId(),
+                    request.message().toUpperCase(Locale.ROOT),
+                    request.amount()
+            ));
+
+            final List<String> events = new ArrayList<>();
+            final RpcClient client = RpcClient.builder(pair.clientChannel())
+                    .interceptor((context, request, invocation) -> {
+                        events.add("first-before");
+                        final RpcClientResult<?> result = invocation.proceed(context, request);
+                        events.add("first-after");
+                        return result;
+                    })
+                    .interceptor((context, request, invocation) -> {
+                        events.add("second-before:" + context.method().name());
+                        final RpcClientResult<?> result = invocation.proceed(context, request);
+                        events.add("second-after");
+                        return result;
+                    })
+                    .build();
+            final RpcClientMethod<ClientEchoRequest, ClientEchoResponse> method = RpcClientMethod.of(
+                    "client.intercepted",
+                    ClientEchoRequest.class,
+                    ClientEchoResponse.class,
+                    REQUEST_MESSAGE_TYPE_ID,
+                    RESPONSE_MESSAGE_TYPE_ID
+            );
+
+            final ClientEchoResponse response = client.send(
+                    method,
+                    new ClientEchoRequest(UUID.randomUUID(), "hello", 1)
+            );
+            assertEquals("HELLO", response.message());
+            assertEquals(
+                    List.of("first-before", "second-before:client.intercepted", "second-after", "first-after"),
+                    events
+            );
+        }
+    }
+
+    @Test
+    void shouldPropagateTimeout() {
+        try (ChannelPair pair = openChannels()) {
+            pair.serverChannel().registerRequestHandler(REQUEST_MESSAGE_TYPE_ID, (offset, length, correlationId, buffer) -> {
+            });
+
+            final RpcClient client = RpcClient.builder(pair.clientChannel())
+                    .defaultTimeoutNs(10_000_000L)
+                    .build();
+            final RpcClientMethod<ClientEchoRequest, ClientEchoResponse> method = RpcClientMethod.of(
+                    "client.timeout",
+                    ClientEchoRequest.class,
+                    ClientEchoResponse.class,
+                    REQUEST_MESSAGE_TYPE_ID,
+                    RESPONSE_MESSAGE_TYPE_ID
+            );
+
+            assertThrows(
+                    RpcCallTimeoutException.class,
+                    () -> client.send(method, new ClientEchoRequest(UUID.randomUUID(), "slow", 1))
+            );
+        }
+    }
+
+    @Test
+    void shouldRejectUnexpectedResponseMessageType() {
+        try (ChannelPair pair = openChannels()) {
+            pair.serverChannel().registerRequestHandler(REQUEST_MESSAGE_TYPE_ID, (offset, length, correlationId, buffer) -> {
+                final UnsafeBuffer responseBuffer = new UnsafeBuffer(new byte[RpcEnvelope.HEADER_LENGTH + Integer.BYTES]);
+                responseBuffer.putInt(RpcEnvelope.HEADER_LENGTH, 1);
+                pair.serverChannel().reply(Integer.BYTES, RESPONSE_MESSAGE_TYPE_ID + 1, correlationId, responseBuffer);
+            });
+
+            final RpcClient client = RpcClient.builder(pair.clientChannel()).build();
+            final RpcClientMethod<ClientEchoRequest, ClientEchoResponse> method = RpcClientMethod.of(
+                    "client.unexpected-type",
+                    ClientEchoRequest.class,
+                    ClientEchoResponse.class,
+                    REQUEST_MESSAGE_TYPE_ID,
+                    RESPONSE_MESSAGE_TYPE_ID
+            );
+
+            final IllegalStateException error = assertThrows(
+                    IllegalStateException.class,
+                    () -> client.exchange(method, new ClientEchoRequest(UUID.randomUUID(), "x", 1))
+            );
+            assertTrue(error.getMessage().contains("unexpected responseMessageTypeId"));
+        }
+    }
+
+    private static ChannelPair openChannels() {
+        final int basePort = PORTS.getAndAdd(2);
+        final int streamId = STREAMS.getAndIncrement();
+        final RpcRuntime runtime = RpcRuntime.launchEmbedded();
+        final RpcChannel clientChannel = runtime.createChannel(
+                RpcChannelConfig.createDefault(
+                        "aeron:udp?endpoint=localhost:" + basePort,
+                        "aeron:udp?endpoint=localhost:" + (basePort + 1),
+                        streamId
+                )
+        );
+        final RpcChannel serverChannel = runtime.createChannel(
+                RpcChannelConfig.createDefault(
+                        "aeron:udp?endpoint=localhost:" + (basePort + 1),
+                        "aeron:udp?endpoint=localhost:" + basePort,
+                        streamId
+                )
+        );
+        return new ChannelPair(runtime, clientChannel, serverChannel);
+    }
+
+    private record ChannelPair(
+            RpcRuntime runtime,
+            RpcChannel clientChannel,
+            RpcChannel serverChannel
+    ) implements AutoCloseable {
+
+        @Override
+        public void close() {
+            this.runtime.close();
+        }
+    }
+}

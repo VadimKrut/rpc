@@ -11,12 +11,13 @@ import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.Int2ObjectHashMap;
 import org.agrona.concurrent.UnsafeBuffer;
 import ru.pathcreator.pyc.rpc.core.codex.RpcEnvelope;
-import ru.pathcreator.pyc.rpc.core.codex.RpcMethodRegistry;
 import ru.pathcreator.pyc.rpc.core.codex.RpcRequestHandler;
-import ru.pathcreator.pyc.rpc.core.codex.RpcResponseDecoder;
+import ru.pathcreator.pyc.rpc.core.codex.RpcResponseFrame;
+import ru.pathcreator.pyc.rpc.core.codex.RpcStatusCodes;
 import ru.pathcreator.pyc.rpc.core.collection.WaitersTable;
 import ru.pathcreator.pyc.rpc.core.config.RpcChannelConfig;
 import ru.pathcreator.pyc.rpc.core.exception.RpcCallTimeoutException;
+import ru.pathcreator.pyc.rpc.core.exception.RpcRemoteException;
 import ru.pathcreator.pyc.rpc.core.generator.CorrelationIdGenerator;
 import ru.pathcreator.pyc.rpc.core.generator.YieldThenParkIdleStrategy;
 import ru.pathcreator.pyc.rpc.core.serialization.RpcCodecSupport;
@@ -35,7 +36,6 @@ public final class RpcChannel implements AutoCloseable {
     private final FragmentHandler fragmentHandler;
     private final ConcurrentPublication publication;
     private final YieldThenParkIdleStrategy listenerIdleStrategy;
-    private final RpcMethodRegistry methodRegistry = new RpcMethodRegistry();
     private final ThreadLocal<YieldThenParkIdleStrategy> publisherIdleStrategies;
     private final CorrelationIdGenerator correlationIds = new CorrelationIdGenerator();
     private final Int2ObjectHashMap<RpcRequestHandler> requestHandlers = new Int2ObjectHashMap<>();
@@ -58,16 +58,11 @@ public final class RpcChannel implements AutoCloseable {
                 () -> new YieldThenParkIdleStrategy(config.publisherMaxYields())
         );
         this.running = true;
-        this.fragmentHandler = new FragmentAssembler(this::onFragment);
+        this.fragmentHandler = new FragmentAssembler(
+                (buffer, offset, length, header) -> this.onFragment(offset, length, header, buffer)
+        );
         this.listenerThread = new Thread(this::listenerLoop, "rpc-channel-listener-" + config.streamId());
         this.listenerThread.start();
-    }
-
-    public <T> void registerResponseDecoder(
-            final int responseMessageTypeId,
-            final RpcResponseDecoder<T> decoder
-    ) {
-        methodRegistry.registerResponseDecoder(responseMessageTypeId, decoder);
     }
 
     public void registerRequestHandler(
@@ -84,27 +79,19 @@ public final class RpcChannel implements AutoCloseable {
             final int responseMessageTypeId,
             final RpcDtoHandler<Q, R> handler
     ) {
+        final ru.pathcreator.pyc.rpc.codec.SerializationCodec<Q> requestCodec = RpcCodecSupport.codecFor(requestType);
+        final ru.pathcreator.pyc.rpc.codec.SerializationCodec<R> responseCodec = RpcCodecSupport.codecFor(responseType);
         this.registerRequestHandler(requestMessageTypeId, (offset, length, correlationId, buffer) -> {
-            final Q request = RpcCodecSupport.decode(offset, length, requestType, buffer);
+            final Q request = requestCodec.decode(buffer, offset, length);
             final R response = handler.handle(request);
             if (response == null) {
                 throw new IllegalStateException("RPC handler returned null for " + responseType.getName());
             }
-            final UnsafeBuffer responseBuffer = RpcCodecSupport.encode(response, RpcEnvelope.HEADER_LENGTH, responseType);
-            this.reply(responseBuffer.capacity() - RpcEnvelope.HEADER_LENGTH, correlationId, responseMessageTypeId, responseBuffer);
+            final int payloadLength = responseCodec.measure(response);
+            final UnsafeBuffer responseBuffer = new UnsafeBuffer(java.nio.ByteBuffer.allocateDirect(RpcEnvelope.HEADER_LENGTH + payloadLength));
+            responseCodec.encode(response, responseBuffer, RpcEnvelope.HEADER_LENGTH);
+            this.reply(payloadLength, responseMessageTypeId, correlationId, responseBuffer);
         });
-    }
-
-    @SuppressWarnings("unchecked")
-    public <T> T send(
-            final long timeoutNs,
-            final int payloadLength,
-            final int requestMessageTypeId,
-            final MutableDirectBuffer requestBuffer
-    ) {
-        return (T) this.decodeResponse(
-                this.sendRaw(timeoutNs, payloadLength, requestMessageTypeId, requestBuffer)
-        );
     }
 
     public <Q, R> R send(
@@ -125,7 +112,18 @@ public final class RpcChannel implements AutoCloseable {
                 requestMessageTypeId,
                 requestBuffer
         );
-        return this.decodeResponse(responseType, response, responseMessageTypeId);
+        return this.decodeResponse(responseType, this.toResponseFrame(response), responseMessageTypeId);
+    }
+
+    public RpcResponseFrame sendFrame(
+            final long timeoutNs,
+            final int payloadLength,
+            final int requestMessageTypeId,
+            final MutableDirectBuffer requestBuffer
+    ) {
+        return this.toResponseFrame(
+                this.sendRaw(timeoutNs, payloadLength, requestMessageTypeId, requestBuffer)
+        );
     }
 
     public UnsafeBuffer sendRaw(
@@ -138,7 +136,7 @@ public final class RpcChannel implements AutoCloseable {
         final long correlationId = this.correlationIds.nextId();
         this.waiters.put(correlationId, wrapper);
         try {
-            this.publish(0, payloadLength, correlationId, requestMessageTypeId, requestBuffer);
+            this.publish(0, RpcStatusCodes.OK, payloadLength, correlationId, requestMessageTypeId, requestBuffer);
         } catch (final RuntimeException problem) {
             this.waiters.remove(correlationId);
             throw problem;
@@ -148,11 +146,28 @@ public final class RpcChannel implements AutoCloseable {
 
     public void reply(
             final int payloadLength,
-            final long correlationId,
             final int responseMessageTypeId,
+            final long correlationId,
             final MutableDirectBuffer responseBuffer
     ) {
-        this.publish(RpcEnvelope.FLAG_RESPONSE, payloadLength, correlationId, responseMessageTypeId, responseBuffer);
+        this.reply(payloadLength, responseMessageTypeId, RpcStatusCodes.OK, correlationId, responseBuffer);
+    }
+
+    public void reply(
+            final int payloadLength,
+            final int responseMessageTypeId,
+            final int statusCode,
+            final long correlationId,
+            final MutableDirectBuffer responseBuffer
+    ) {
+        this.publish(
+                RpcEnvelope.FLAG_RESPONSE,
+                statusCode,
+                payloadLength,
+                correlationId,
+                responseMessageTypeId,
+                responseBuffer
+        );
     }
 
     @Override
@@ -174,6 +189,7 @@ public final class RpcChannel implements AutoCloseable {
 
     private void publish(
             final int flags,
+            final int statusCode,
             final int payloadLength,
             final long correlationId,
             final int requestMessageTypeId,
@@ -182,7 +198,7 @@ public final class RpcChannel implements AutoCloseable {
         final int totalLength = RpcEnvelope.HEADER_LENGTH + payloadLength;
         final YieldThenParkIdleStrategy idleStrategy = this.publisherIdleStrategies.get();
         idleStrategy.reset();
-        RpcEnvelope.encode(flags, payloadLength, requestMessageTypeId, correlationId, requestBuffer);
+        RpcEnvelope.encode(flags, statusCode, payloadLength, requestMessageTypeId, correlationId, requestBuffer);
         while (this.running) {
             final long result = this.publication.offer(requestBuffer, 0, totalLength);
             if (result > 0) {
@@ -207,10 +223,10 @@ public final class RpcChannel implements AutoCloseable {
     }
 
     private void onFragment(
-            final DirectBuffer buffer,
             final int offset,
             final int length,
-            final Header header
+            final Header header,
+            final DirectBuffer buffer
     ) {
         if (length < RpcEnvelope.HEADER_LENGTH) {
             return;
@@ -260,53 +276,58 @@ public final class RpcChannel implements AutoCloseable {
         return wrapper.bytes();
     }
 
-    private Object decodeResponse(
-            final UnsafeBuffer response
+    private <T> T decodeResponse(
+            final Class<T> responseType,
+            final RpcResponseFrame response,
+            final int expectedResponseMessageTypeId
     ) {
-        final int flags = RpcEnvelope.flags(0, response);
-        final int payloadLength = RpcEnvelope.payloadLength(0, response);
-        if ((flags & RpcEnvelope.FLAG_RESPONSE) == 0) {
-            throw new IllegalStateException("response flag is not set");
+        if (response.messageTypeId() != expectedResponseMessageTypeId) {
+            throw new IllegalStateException("unexpected responseMessageTypeId=" + response.messageTypeId() + ", expected=" + expectedResponseMessageTypeId);
         }
-        if (payloadLength < 0 || payloadLength > response.capacity() - RpcEnvelope.HEADER_LENGTH) {
-            throw new IllegalStateException("invalid payload length");
+        if (!response.isSuccess()) {
+            throw this.remoteException(response);
         }
-        if ((flags & RpcEnvelope.FLAG_ERROR) != 0) {
-            throw new IllegalStateException(
-                    this.errorText(payloadLength, response)
-            );
-        }
-        return this.methodRegistry.decode(
-                payloadLength,
-                response,
-                RpcEnvelope.messageTypeId(0, response)
+        return RpcCodecSupport.decode(
+                response.payloadOffset(),
+                response.payloadLength(),
+                responseType,
+                response.buffer()
         );
     }
 
-    private <T> T decodeResponse(
-            final Class<T> responseType,
-            final UnsafeBuffer response,
-            final int expectedResponseMessageTypeId
+    private RpcResponseFrame toResponseFrame(
+            final UnsafeBuffer response
     ) {
         final int flags = RpcEnvelope.flags(0, response);
+        final int statusCode = RpcEnvelope.statusCode(0, response);
         final int payloadLength = RpcEnvelope.payloadLength(0, response);
-        final int actualResponseMessageTypeId = RpcEnvelope.messageTypeId(0, response);
         if ((flags & RpcEnvelope.FLAG_RESPONSE) == 0) {
             throw new IllegalStateException("response flag is not set");
-        }
-        if (actualResponseMessageTypeId != expectedResponseMessageTypeId) {
-            throw new IllegalStateException("unexpected responseMessageTypeId=" + actualResponseMessageTypeId + ", expected=" + expectedResponseMessageTypeId);
         }
         if (payloadLength < 0 || payloadLength > response.capacity() - RpcEnvelope.HEADER_LENGTH) {
             throw new IllegalStateException("invalid payload length");
         }
-        if ((flags & RpcEnvelope.FLAG_ERROR) != 0) {
-            throw new IllegalStateException(this.errorText(payloadLength, response));
-        }
-        return RpcCodecSupport.decode(RpcEnvelope.HEADER_LENGTH, payloadLength, responseType, response);
+        return new RpcResponseFrame(
+                RpcEnvelope.messageTypeId(0, response),
+                RpcEnvelope.correlationId(0, response),
+                statusCode,
+                payloadLength,
+                response
+        );
     }
 
-    private String errorText(
+    private RpcRemoteException remoteException(
+            final RpcResponseFrame response
+    ) {
+        return new RpcRemoteException(
+                response.statusCode(),
+                response.messageTypeId(),
+                response.correlationId(),
+                this.payloadText(response.payloadLength(), response.buffer())
+        );
+    }
+
+    private String payloadText(
             final int length,
             final DirectBuffer buffer
     ) {

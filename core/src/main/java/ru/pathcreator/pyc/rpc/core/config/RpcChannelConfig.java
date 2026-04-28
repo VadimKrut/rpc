@@ -40,9 +40,9 @@ public record RpcChannelConfig(
                 publicationChannel,
                 subscriptionChannel,
                 streamId,
-                32,
+                128,
                 512,
-                20_000,
+                512,
                 1_048_576,
                 0.75f
         );

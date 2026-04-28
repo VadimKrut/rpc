@@ -1,6 +1,7 @@
 package ru.pathcreator.pyc.rpc.core.serialization;
 
 import org.agrona.DirectBuffer;
+import org.agrona.MutableDirectBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
 import ru.pathcreator.pyc.rpc.codec.SerializationCodec;
 import ru.pathcreator.pyc.rpc.codec.SerializationCodecRegistry;
@@ -32,11 +33,26 @@ public final class RpcCodecSupport {
             final int offset,
             final Class<T> type
     ) {
-        final SerializationCodec<T> codec = codecFor(type);
-        final int payloadLength = codec.measure(value);
+        final int payloadLength = measure(value, type);
         final UnsafeBuffer buffer = new UnsafeBuffer(ByteBuffer.allocateDirect(offset + payloadLength));
-        codec.encode(value, buffer, offset);
+        encodeInto(value, offset, type, buffer);
         return buffer;
+    }
+
+    public static <T> int measure(
+            final T value,
+            final Class<T> type
+    ) {
+        return codecFor(type).measure(value);
+    }
+
+    public static <T> int encodeInto(
+            final T value,
+            final int offset,
+            final Class<T> type,
+            final MutableDirectBuffer buffer
+    ) {
+        return codecFor(type).encode(value, buffer, offset);
     }
 
     public static <T> T decode(

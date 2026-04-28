@@ -1,11 +1,13 @@
 package ru.pathcreator.pyc.rpc.core.benchmark;
 
 import com.sun.management.OperatingSystemMXBean;
-import org.agrona.DirectBuffer;
+import org.agrona.ExpandableArrayBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
 import ru.pathcreator.pyc.rpc.core.RpcChannel;
 import ru.pathcreator.pyc.rpc.core.RpcRuntime;
 import ru.pathcreator.pyc.rpc.core.codex.RpcEnvelope;
+import ru.pathcreator.pyc.rpc.core.codex.RpcResponseFrame;
+import ru.pathcreator.pyc.rpc.core.codex.RpcStatusCodes;
 import ru.pathcreator.pyc.rpc.core.config.RpcChannelConfig;
 
 import java.lang.management.BufferPoolMXBean;
@@ -121,18 +123,12 @@ public final class RpcBenchmarkMain {
 
                 final RpcChannel client = runtime.createChannel(clientConfig);
                 final RpcChannel server = runtime.createChannel(serverConfig);
-                client.registerResponseDecoder(
-                        RESPONSE_MESSAGE_TYPE_ID,
-                        (offset, length, buffer) -> decodeResponse(buffer, offset, length)
-                );
-                final UnsafeBuffer responseBuffer = new UnsafeBuffer(
-                        ByteBuffer.allocateDirect(RpcEnvelope.HEADER_LENGTH + RESPONSE_PAYLOAD_LENGTH)
-                );
+                final ExpandableArrayBuffer responseBuffer = new ExpandableArrayBuffer(RpcEnvelope.HEADER_LENGTH + RESPONSE_PAYLOAD_LENGTH);
                 server.registerRequestHandler(REQUEST_MESSAGE_TYPE_ID, (offset, length, correlationId, buffer) -> {
                     final long a = buffer.getLong(offset, ByteOrder.LITTLE_ENDIAN);
                     final long b = buffer.getLong(offset + Long.BYTES, ByteOrder.LITTLE_ENDIAN);
                     responseBuffer.putLong(RpcEnvelope.HEADER_LENGTH, a + b, ByteOrder.LITTLE_ENDIAN);
-                    server.reply(RESPONSE_PAYLOAD_LENGTH, correlationId, RESPONSE_MESSAGE_TYPE_ID, responseBuffer);
+                    server.reply(RESPONSE_PAYLOAD_LENGTH, RESPONSE_MESSAGE_TYPE_ID, correlationId, responseBuffer);
                 });
                 clients[index] = client;
                 servers[index] = server;
@@ -161,14 +157,14 @@ public final class RpcBenchmarkMain {
                             final long b = 42L;
                             encodeRequest(requestBuffer, a, b);
                             final long opStartedAt = System.nanoTime();
-                            final long response = client.send(
+                            final RpcResponseFrame response = client.sendFrame(
                                     TIMEOUT_NS,
                                     REQUEST_PAYLOAD_LENGTH,
                                     REQUEST_MESSAGE_TYPE_ID,
                                     requestBuffer
                             );
                             final long spent = System.nanoTime() - opStartedAt;
-                            if (response != a + b) {
+                            if (!response.isSuccess() || decodeResponse(response) != a + b) {
                                 errors.increment();
                             }
                             if (opStartedAt + spent >= warmupDeadline) {
@@ -200,11 +196,14 @@ public final class RpcBenchmarkMain {
         buffer.putLong(RpcEnvelope.HEADER_LENGTH + Long.BYTES, b, ByteOrder.LITTLE_ENDIAN);
     }
 
-    private static Long decodeResponse(final DirectBuffer buffer, final int offset, final int length) {
-        if (length != RESPONSE_PAYLOAD_LENGTH) {
-            throw new IllegalStateException("invalid response payload length: " + length);
+    private static long decodeResponse(final RpcResponseFrame response) {
+        if (response.statusCode() != RpcStatusCodes.OK) {
+            throw new IllegalStateException("unexpected rpc status: " + response.statusCode());
         }
-        return buffer.getLong(offset, ByteOrder.LITTLE_ENDIAN);
+        if (response.payloadLength() != RESPONSE_PAYLOAD_LENGTH) {
+            throw new IllegalStateException("invalid response payload length: " + response.payloadLength());
+        }
+        return response.buffer().getLong(response.payloadOffset(), ByteOrder.LITTLE_ENDIAN);
     }
 
     private static void printResult(
