@@ -331,10 +331,31 @@ public final class RpcBenchmarkMain {
     }
 
     private static void forceGc() throws InterruptedException {
-        System.gc();
-        Thread.sleep(500L);
-        System.gc();
-        Thread.sleep(500L);
+        long previousDirectUsed = Long.MIN_VALUE;
+        int stableIterations = 0;
+        for (int attempt = 0; attempt < 8; attempt++) {
+            System.gc();
+            Thread.sleep(200L + attempt * 100L);
+            final long currentDirectUsed = readDirectUsed();
+            if (currentDirectUsed == previousDirectUsed) {
+                stableIterations += 1;
+                if (stableIterations >= 2) {
+                    return;
+                }
+            } else {
+                stableIterations = 0;
+            }
+            previousDirectUsed = currentDirectUsed;
+        }
+    }
+
+    private static long readDirectUsed() {
+        for (final BufferPoolMXBean pool : ManagementFactory.getPlatformMXBeans(BufferPoolMXBean.class)) {
+            if ("direct".equals(pool.getName())) {
+                return pool.getMemoryUsed();
+            }
+        }
+        return -1L;
     }
 
     private static final class IndexRecorder {

@@ -72,6 +72,13 @@ public final class RpcChannel implements AutoCloseable {
         this.requestHandlers.put(requestMessageTypeId, handler);
     }
 
+    /**
+     * Низкоуровневый типизированный обработчик. Аллоцирует свежий direct {@code ByteBuffer}
+     * на каждый ответ, что нежелательно на горячем пути. Используйте
+     * {@code RpcServer.register(...)} — он переиспользует thread-local буфер ответа,
+     * либо {@link #registerRequestHandler(int, RpcRequestHandler)} как сырое API.
+     */
+    @Deprecated
     public <Q, R> void registerHandler(
             final Class<Q> requestType,
             final Class<R> responseType,
@@ -94,6 +101,14 @@ public final class RpcChannel implements AutoCloseable {
         });
     }
 
+    /**
+     * Высокоуровневый типизированный {@code send}. Аллоцирует свежий direct
+     * {@code ByteBuffer} на каждый запрос (через {@code RpcCodecSupport.encode}),
+     * что нежелательно на горячем пути. Используйте {@code RpcClient} — у него
+     * thread-local буфер запроса и кэшированные binding'и, либо
+     * {@link #sendFrame(long, int, int, MutableDirectBuffer)} как сырое API.
+     */
+    @Deprecated
     public <Q, R> R send(
             final Q request,
             final long timeoutNs,

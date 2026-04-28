@@ -1,6 +1,7 @@
 package ru.pathcreator.pyc.rpc.client;
 
 import org.agrona.ExpandableArrayBuffer;
+import org.agrona.collections.Int2ObjectHashMap;
 import ru.pathcreator.pyc.rpc.client.call.RpcClientCall;
 import ru.pathcreator.pyc.rpc.client.context.RpcClientContext;
 import ru.pathcreator.pyc.rpc.client.method.RpcClientMethod;
@@ -11,23 +12,24 @@ import ru.pathcreator.pyc.rpc.client.pipeline.RpcClientResponseValidator;
 import ru.pathcreator.pyc.rpc.client.response.RpcClientResult;
 import ru.pathcreator.pyc.rpc.codec.SerializationCodec;
 import ru.pathcreator.pyc.rpc.core.RpcChannel;
+import ru.pathcreator.pyc.rpc.core.codex.RpcEnvelope;
 import ru.pathcreator.pyc.rpc.core.codex.RpcResponseFrame;
 import ru.pathcreator.pyc.rpc.core.serialization.RpcCodecSupport;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
-import java.util.concurrent.ConcurrentHashMap;
 
 public final class RpcClient {
 
     private final RpcChannel channel;
     private final long defaultTimeoutNs;
+    private final boolean fastPathEligible;
+    private final Object bindingsLock = new Object();
+    private final List<RpcClientInterceptor> interceptors;
     private final RpcClientRequestValidator requestValidator;
     private final RpcClientResponseValidator responseValidator;
-    private final List<RpcClientInterceptor> interceptors;
-    private final ConcurrentHashMap<RpcClientMethod<?, ?>, ClientMethodBinding<?, ?>> bindings = new ConcurrentHashMap<>();
-    private final ThreadLocal<ExpandableArrayBuffer> requestBuffers =
-            ThreadLocal.withInitial(() -> new ExpandableArrayBuffer(512));
+    private volatile Int2ObjectHashMap<ClientMethodBinding<?, ?>> bindings = new Int2ObjectHashMap<>();
+    private final ThreadLocal<ExpandableArrayBuffer> requestBuffers = ThreadLocal.withInitial(() -> new ExpandableArrayBuffer(512));
 
     RpcClient(
             final RpcChannel channel,
@@ -41,6 +43,9 @@ public final class RpcClient {
         this.requestValidator = requestValidator;
         this.responseValidator = responseValidator;
         this.interceptors = interceptors;
+        this.fastPathEligible = interceptors.isEmpty()
+                                && requestValidator == RpcClientRequestValidator.NOOP
+                                && responseValidator == RpcClientResponseValidator.NOOP;
     }
 
     public static RpcClientBuilder builder(
@@ -55,11 +60,7 @@ public final class RpcClient {
         if (method == null) {
             throw new IllegalArgumentException("method must not be null");
         }
-        return new RpcClientCall<>(
-                method,
-                this.defaultTimeoutNs,
-                (context, request) -> this.bindingFor(method).exchange(context, request)
-        );
+        return this.bindingFor(method).call;
     }
 
     public <Q, R> R send(
@@ -96,17 +97,34 @@ public final class RpcClient {
     private <Q, R> ClientMethodBinding<Q, R> bindingFor(
             final RpcClientMethod<Q, R> method
     ) {
-        return (ClientMethodBinding<Q, R>) this.bindings.computeIfAbsent(method, this::createBinding);
+        final ClientMethodBinding<?, ?> existing = this.bindings.get(method.requestMessageTypeId());
+        if (existing != null) {
+            return (ClientMethodBinding<Q, R>) existing;
+        }
+        return this.createBindingSlow(method);
     }
 
-    private <Q, R> ClientMethodBinding<Q, R> createBinding(
+    @SuppressWarnings("unchecked")
+    private <Q, R> ClientMethodBinding<Q, R> createBindingSlow(
             final RpcClientMethod<Q, R> method
     ) {
-        return new ClientMethodBinding<>(
-                method,
-                RpcCodecSupport.codecFor(method.requestType()),
-                RpcCodecSupport.codecFor(method.responseType())
-        );
+        synchronized (this.bindingsLock) {
+            final Int2ObjectHashMap<ClientMethodBinding<?, ?>> current = this.bindings;
+            final ClientMethodBinding<?, ?> existing = current.get(method.requestMessageTypeId());
+            if (existing != null) {
+                return (ClientMethodBinding<Q, R>) existing;
+            }
+            final ClientMethodBinding<Q, R> binding = new ClientMethodBinding<>(
+                    method,
+                    RpcCodecSupport.codecFor(method.requestType()),
+                    RpcCodecSupport.codecFor(method.responseType())
+            );
+            final Int2ObjectHashMap<ClientMethodBinding<?, ?>> next = new Int2ObjectHashMap<>(current.size() + 1, 0.6f);
+            next.putAll(current);
+            next.put(method.requestMessageTypeId(), binding);
+            this.bindings = next;
+            return binding;
+        }
     }
 
     private final class ClientMethodBinding<Q, R> {
@@ -114,6 +132,8 @@ public final class RpcClient {
         private final RpcClientMethod<Q, R> method;
         private final SerializationCodec<Q> requestCodec;
         private final SerializationCodec<R> responseCodec;
+        private final RpcClientInvocation cachedInvocation;
+        private final RpcClientCall<Q, R> call;
 
         private ClientMethodBinding(
                 final RpcClientMethod<Q, R> method,
@@ -123,23 +143,41 @@ public final class RpcClient {
             this.method = method;
             this.requestCodec = requestCodec;
             this.responseCodec = responseCodec;
+            this.cachedInvocation = this.buildInvocation();
+            final RpcClientCall.Dispatcher<Q, R> dispatcher = RpcClient.this.fastPathEligible
+                    ? this::exchangeFast
+                    : this::exchangeWithPipeline;
+            this.call = new RpcClientCall<>(method, RpcClient.this.defaultTimeoutNs, dispatcher);
         }
 
-        private RpcClientResult<R> exchange(
-                final RpcClientContext context,
-                final Q request
+        private RpcClientResult<R> exchangeFast(
+                final Q request,
+                final long timeoutNs
         ) {
             if (request == null) {
                 throw new IllegalArgumentException("request must not be null");
             }
-            if (context.timeoutNs() <= 0L) {
+            if (timeoutNs <= 0L) {
                 throw new IllegalArgumentException("timeoutNs must be > 0");
             }
-            requestValidator.validate(context, request);
-            final RpcClientInvocation invocation = this.buildInvocation();
+            return this.decodeFrame(this.send(request, timeoutNs));
+        }
+
+        private RpcClientResult<R> exchangeWithPipeline(
+                final Q request,
+                final long timeoutNs
+        ) {
+            if (request == null) {
+                throw new IllegalArgumentException("request must not be null");
+            }
+            if (timeoutNs <= 0L) {
+                throw new IllegalArgumentException("timeoutNs must be > 0");
+            }
+            final RpcClientContext context = new RpcClientContext(this.method, timeoutNs);
+            RpcClient.this.requestValidator.validate(context, request);
             @SuppressWarnings("unchecked") final RpcClientResult<R> result =
-                    (RpcClientResult<R>) invocation.proceed(context, request);
-            responseValidator.validate(context, result);
+                    (RpcClientResult<R>) this.cachedInvocation.proceed(context, request);
+            RpcClient.this.responseValidator.validate(context, result);
             return result;
         }
 
@@ -147,8 +185,9 @@ public final class RpcClient {
             RpcClientInvocation invocation = (context, request) -> this.decodeFrame(
                     this.send(this.method.requestType().cast(request), context.timeoutNs())
             );
-            for (int index = interceptors.size() - 1; index >= 0; index--) {
-                final RpcClientInterceptor interceptor = interceptors.get(index);
+            final List<RpcClientInterceptor> chain = RpcClient.this.interceptors;
+            for (int index = chain.size() - 1; index >= 0; index--) {
+                final RpcClientInterceptor interceptor = chain.get(index);
                 final RpcClientInvocation next = invocation;
                 invocation = (context, request) -> interceptor.intercept(context, request, next);
             }
@@ -159,13 +198,13 @@ public final class RpcClient {
                 final Q request,
                 final long timeoutNs
         ) {
-            final ExpandableArrayBuffer requestBuffer = requestBuffers.get();
+            final ExpandableArrayBuffer requestBuffer = RpcClient.this.requestBuffers.get();
             final int payloadLength = this.requestCodec.encode(
                     request,
                     requestBuffer,
-                    ru.pathcreator.pyc.rpc.core.codex.RpcEnvelope.HEADER_LENGTH
+                    RpcEnvelope.HEADER_LENGTH
             );
-            return channel.sendFrame(
+            return RpcClient.this.channel.sendFrame(
                     timeoutNs,
                     payloadLength,
                     this.method.requestMessageTypeId(),

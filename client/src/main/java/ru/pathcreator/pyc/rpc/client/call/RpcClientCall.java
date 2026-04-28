@@ -1,25 +1,22 @@
 package ru.pathcreator.pyc.rpc.client.call;
 
-import ru.pathcreator.pyc.rpc.client.context.RpcClientContext;
 import ru.pathcreator.pyc.rpc.client.method.RpcClientMethod;
 import ru.pathcreator.pyc.rpc.client.response.RpcClientResult;
 
-import java.util.function.BiFunction;
-
 public final class RpcClientCall<Q, R> {
 
-    private final RpcClientMethod<Q, R> method;
     private final long defaultTimeoutNs;
-    private final BiFunction<RpcClientContext, Q, RpcClientResult<R>> exchangeFunction;
+    private final Dispatcher<Q, R> dispatcher;
+    private final RpcClientMethod<Q, R> method;
 
     public RpcClientCall(
             final RpcClientMethod<Q, R> method,
             final long defaultTimeoutNs,
-            final BiFunction<RpcClientContext, Q, RpcClientResult<R>> exchangeFunction
+            final Dispatcher<Q, R> dispatcher
     ) {
         this.method = method;
         this.defaultTimeoutNs = defaultTimeoutNs;
-        this.exchangeFunction = exchangeFunction;
+        this.dispatcher = dispatcher;
     }
 
     public RpcClientMethod<Q, R> method() {
@@ -42,13 +39,18 @@ public final class RpcClientCall<Q, R> {
     public RpcClientResult<R> exchange(
             final Q request
     ) {
-        return this.exchange(request, this.defaultTimeoutNs);
+        return this.dispatcher.exchange(request, this.defaultTimeoutNs);
     }
 
     public RpcClientResult<R> exchange(
             final Q request,
             final long timeoutNs
     ) {
-        return this.exchangeFunction.apply(new RpcClientContext(this.method, timeoutNs), request);
+        return this.dispatcher.exchange(request, timeoutNs);
+    }
+
+    @FunctionalInterface
+    public interface Dispatcher<Q, R> {
+        RpcClientResult<R> exchange(Q request, long timeoutNs);
     }
 }
