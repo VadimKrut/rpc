@@ -19,6 +19,8 @@ import ru.pathcreator.pyc.rpc.core.config.RpcChannelConfig;
 import ru.pathcreator.pyc.rpc.core.exception.RpcCallTimeoutException;
 import ru.pathcreator.pyc.rpc.core.generator.CorrelationIdGenerator;
 import ru.pathcreator.pyc.rpc.core.generator.YieldThenParkIdleStrategy;
+import ru.pathcreator.pyc.rpc.core.serialization.RpcCodecSupport;
+import ru.pathcreator.pyc.rpc.core.serialization.RpcDtoHandler;
 import ru.pathcreator.pyc.rpc.core.wrapper.WrapperThread;
 
 import java.nio.charset.StandardCharsets;
@@ -75,6 +77,24 @@ public final class RpcChannel implements AutoCloseable {
         this.requestHandlers.put(requestMessageTypeId, handler);
     }
 
+    public <Q, R> void registerHandler(
+            final Class<Q> requestType,
+            final Class<R> responseType,
+            final int requestMessageTypeId,
+            final int responseMessageTypeId,
+            final RpcDtoHandler<Q, R> handler
+    ) {
+        this.registerRequestHandler(requestMessageTypeId, (offset, length, correlationId, buffer) -> {
+            final Q request = RpcCodecSupport.decode(offset, length, requestType, buffer);
+            final R response = handler.handle(request);
+            if (response == null) {
+                throw new IllegalStateException("RPC handler returned null for " + responseType.getName());
+            }
+            final UnsafeBuffer responseBuffer = RpcCodecSupport.encode(response, RpcEnvelope.HEADER_LENGTH, responseType);
+            this.reply(responseBuffer.capacity() - RpcEnvelope.HEADER_LENGTH, correlationId, responseMessageTypeId, responseBuffer);
+        });
+    }
+
     @SuppressWarnings("unchecked")
     public <T> T send(
             final long timeoutNs,
@@ -85,6 +105,27 @@ public final class RpcChannel implements AutoCloseable {
         return (T) this.decodeResponse(
                 this.sendRaw(timeoutNs, payloadLength, requestMessageTypeId, requestBuffer)
         );
+    }
+
+    public <Q, R> R send(
+            final Q request,
+            final long timeoutNs,
+            final Class<R> responseType,
+            final int requestMessageTypeId,
+            final int responseMessageTypeId
+    ) {
+        if (request == null) {
+            throw new IllegalArgumentException("request must not be null");
+        }
+        @SuppressWarnings("unchecked") final Class<Q> requestType = (Class<Q>) request.getClass();
+        final UnsafeBuffer requestBuffer = RpcCodecSupport.encode(request, RpcEnvelope.HEADER_LENGTH, requestType);
+        final UnsafeBuffer response = this.sendRaw(
+                timeoutNs,
+                requestBuffer.capacity() - RpcEnvelope.HEADER_LENGTH,
+                requestMessageTypeId,
+                requestBuffer
+        );
+        return this.decodeResponse(responseType, response, responseMessageTypeId);
     }
 
     public UnsafeBuffer sendRaw(
@@ -240,6 +281,29 @@ public final class RpcChannel implements AutoCloseable {
                 response,
                 RpcEnvelope.messageTypeId(0, response)
         );
+    }
+
+    private <T> T decodeResponse(
+            final Class<T> responseType,
+            final UnsafeBuffer response,
+            final int expectedResponseMessageTypeId
+    ) {
+        final int flags = RpcEnvelope.flags(0, response);
+        final int payloadLength = RpcEnvelope.payloadLength(0, response);
+        final int actualResponseMessageTypeId = RpcEnvelope.messageTypeId(0, response);
+        if ((flags & RpcEnvelope.FLAG_RESPONSE) == 0) {
+            throw new IllegalStateException("response flag is not set");
+        }
+        if (actualResponseMessageTypeId != expectedResponseMessageTypeId) {
+            throw new IllegalStateException("unexpected responseMessageTypeId=" + actualResponseMessageTypeId + ", expected=" + expectedResponseMessageTypeId);
+        }
+        if (payloadLength < 0 || payloadLength > response.capacity() - RpcEnvelope.HEADER_LENGTH) {
+            throw new IllegalStateException("invalid payload length");
+        }
+        if ((flags & RpcEnvelope.FLAG_ERROR) != 0) {
+            throw new IllegalStateException(this.errorText(payloadLength, response));
+        }
+        return RpcCodecSupport.decode(RpcEnvelope.HEADER_LENGTH, payloadLength, responseType, response);
     }
 
     private String errorText(

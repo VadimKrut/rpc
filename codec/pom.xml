@@ -9,20 +9,10 @@
         <version>0.0.1</version>
     </parent>
 
-    <artifactId>core</artifactId>
+    <artifactId>codec</artifactId>
     <packaging>jar</packaging>
 
     <dependencies>
-        <dependency>
-            <groupId>ru.pathcreator.pyc</groupId>
-            <artifactId>codec</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>io.aeron</groupId>
-            <artifactId>aeron-all</artifactId>
-            <version>${aeron.version}</version>
-        </dependency>
         <dependency>
             <groupId>org.agrona</groupId>
             <artifactId>agrona</artifactId>
@@ -31,7 +21,7 @@
     </dependencies>
 
     <build>
-        <finalName>core</finalName>
+        <finalName>codec</finalName>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>

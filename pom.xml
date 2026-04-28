@@ -13,12 +13,14 @@
         <maven.compiler.release>25</maven.compiler.release>
         <aeron.version>1.50.4</aeron.version>
         <agrona.version>2.4.1</agrona.version>
+        <sbe-tool>1.36.0</sbe-tool>
         <maven.compiler.plugin.version>3.14.1</maven.compiler.plugin.version>
     </properties>
 
     <modules>
+        <module>codec</module>
         <module>core</module>
-        <module>native</module>
+        <module>serialization</module>
     </modules>
 
     <build>
