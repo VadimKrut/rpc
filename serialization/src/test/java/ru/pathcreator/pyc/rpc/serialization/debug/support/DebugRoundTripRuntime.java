@@ -184,11 +184,7 @@ public final class DebugRoundTripRuntime {
     }
 
     private String classpath() {
-        final List<String> parts = new ArrayList<>();
-        parts.add(Path.of("C:", "project", "rpc", "serialization", "target", "classes").toString());
-        parts.add(Path.of("C:", "project", "rpc", "codec", "target", "classes").toString());
-        parts.add(Path.of(System.getProperty("user.home"), ".m2", "repository", "org", "agrona", "agrona", "2.4.1", "agrona-2.4.1.jar").toString());
-        return String.join(System.getProperty("path.separator"), parts);
+        return System.getProperty("java.class.path");
     }
 
     private static void recreateDirectory(final Path directory) throws IOException {
