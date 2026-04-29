@@ -10,6 +10,7 @@
         <module name="core" />
         <module name="codec" />
         <module name="server" />
+        <module name="encryption" />
         <module name="contract" />
         <module name="client" />
         <module name="observability" />

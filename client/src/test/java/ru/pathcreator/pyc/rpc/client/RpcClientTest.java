@@ -8,6 +8,8 @@ import ru.pathcreator.pyc.rpc.client.fixture.ClientEchoResponse;
 import ru.pathcreator.pyc.rpc.client.response.RpcClientResult;
 import ru.pathcreator.pyc.rpc.contract.RpcMethodContract;
 import ru.pathcreator.pyc.rpc.contract.RpcServiceContract;
+import ru.pathcreator.pyc.rpc.encryption.RpcPayloadEncryptionException;
+import ru.pathcreator.pyc.rpc.encryption.RpcPayloadEncryptions;
 import ru.pathcreator.pyc.rpc.core.RpcChannel;
 import ru.pathcreator.pyc.rpc.core.RpcRuntime;
 import ru.pathcreator.pyc.rpc.core.codex.RpcEnvelope;
@@ -400,6 +402,105 @@ final class RpcClientTest {
         }
     }
 
+    @Test
+    void shouldRoundTripWithAesGcmPayloadEncryption() {
+        try (ChannelPair pair = openChannels()) {
+            final byte[] key = filledKey((byte) 0x11, 16);
+            final RpcMethodContract<ClientEchoRequest, ClientEchoResponse> method = RpcMethodContract.of(
+                    "client.encrypted-aes",
+                    ClientEchoRequest.class,
+                    ClientEchoResponse.class,
+                    REQUEST_MESSAGE_TYPE_ID,
+                    RESPONSE_MESSAGE_TYPE_ID
+            );
+            final RpcServer server = RpcServer.builder(pair.serverChannel())
+                    .payloadEncryption(RpcPayloadEncryptions.aesGcm(key, 0x01020304, 1L))
+                    .build();
+            server.register(method, request -> new ClientEchoResponse(
+                    request.requestId(),
+                    request.message().toUpperCase(Locale.ROOT),
+                    request.amount() + 3
+            ));
+            awaitConnectionSetup();
+
+            final RpcClient client = RpcClient.builder(pair.clientChannel())
+                    .payloadEncryption(RpcPayloadEncryptions.aesGcm(key, 0x05060708, 1L))
+                    .build();
+
+            final ClientEchoResponse response = client.send(
+                    method,
+                    new ClientEchoRequest(UUID.randomUUID(), "secret", 2)
+            );
+            assertEquals("SECRET", response.message());
+            assertEquals(5, response.amount());
+        }
+    }
+
+    @Test
+    void shouldDecryptRemoteErrorWithChaCha20Poly1305() {
+        try (ChannelPair pair = openChannels()) {
+            final byte[] key = filledKey((byte) 0x22, 32);
+            final RpcMethodContract<ClientEchoRequest, ClientEchoResponse> method = RpcMethodContract.of(
+                    "client.encrypted-error",
+                    ClientEchoRequest.class,
+                    ClientEchoResponse.class,
+                    REQUEST_MESSAGE_TYPE_ID,
+                    RESPONSE_MESSAGE_TYPE_ID
+            );
+            final RpcServer server = RpcServer.builder(pair.serverChannel())
+                    .payloadEncryption(RpcPayloadEncryptions.chaCha20Poly1305(key, 0x0A0B0C0D, 5L))
+                    .build();
+            server.register(method, request -> {
+                throw new RpcStatusException(RpcStatusCodes.BAD_REQUEST, "encrypted bad request");
+            });
+            awaitConnectionSetup();
+
+            final RpcClient client = RpcClient.builder(pair.clientChannel())
+                    .payloadEncryption(RpcPayloadEncryptions.chaCha20Poly1305(key, 0x0E0F1011, 5L))
+                    .build();
+
+            final RpcClientResult<ClientEchoResponse> result = client.exchange(
+                    method,
+                    new ClientEchoRequest(UUID.randomUUID(), "bad", 1)
+            );
+            assertFalse(result.isSuccess());
+            assertEquals(RpcStatusCodes.BAD_REQUEST, result.statusCode());
+            assertEquals("encrypted bad request", result.errorMessage());
+        }
+    }
+
+    @Test
+    void shouldFailWithGenericErrorWhenEncryptedPayloadCannotBeDecrypted() {
+        try (ChannelPair pair = openChannels()) {
+            final RpcMethodContract<ClientEchoRequest, ClientEchoResponse> method = RpcMethodContract.of(
+                    "client.encrypted-mismatch",
+                    ClientEchoRequest.class,
+                    ClientEchoResponse.class,
+                    REQUEST_MESSAGE_TYPE_ID,
+                    RESPONSE_MESSAGE_TYPE_ID
+            );
+            final RpcServer server = RpcServer.builder(pair.serverChannel())
+                    .payloadEncryption(RpcPayloadEncryptions.aesGcm(filledKey((byte) 0x33, 16), 0x11111111, 9L))
+                    .build();
+            server.register(method, request -> new ClientEchoResponse(
+                    request.requestId(),
+                    request.message(),
+                    request.amount()
+            ));
+            awaitConnectionSetup();
+
+            final RpcClient client = RpcClient.builder(pair.clientChannel())
+                    .payloadEncryption(RpcPayloadEncryptions.aesGcm(filledKey((byte) 0x44, 16), 0x11111111, 9L))
+                    .build();
+
+            final RpcPayloadEncryptionException error = assertThrows(
+                    RpcPayloadEncryptionException.class,
+                    () -> client.send(method, new ClientEchoRequest(UUID.randomUUID(), "boom", 1))
+            );
+            assertEquals("RPC payload decryption failed", error.getMessage());
+        }
+    }
+
     private static ChannelPair openChannels() {
         final int basePort = PORTS.getAndAdd(2);
         final int streamId = STREAMS.getAndIncrement();
@@ -428,6 +529,15 @@ final class RpcClientTest {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("connection setup interrupted", error);
         }
+    }
+
+    private static byte[] filledKey(
+            final byte value,
+            final int size
+    ) {
+        final byte[] key = new byte[size];
+        java.util.Arrays.fill(key, value);
+        return key;
     }
 
     private record ChannelPair(

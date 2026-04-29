@@ -1,6 +1,7 @@
 package ru.pathcreator.pyc.rpc.server;
 
 import ru.pathcreator.pyc.rpc.core.RpcChannel;
+import ru.pathcreator.pyc.rpc.encryption.RpcPayloadEncryption;
 import ru.pathcreator.pyc.rpc.server.error.RpcServerExceptionMapper;
 import ru.pathcreator.pyc.rpc.server.listener.RpcServerListener;
 import ru.pathcreator.pyc.rpc.server.pipeline.RpcServerInterceptor;
@@ -16,6 +17,7 @@ public final class RpcServerBuilder {
     private RpcServerExceptionMapper exceptionMapper = RpcServerExceptionMapper.DEFAULT;
     private RpcServerRequestValidator requestValidator = RpcServerRequestValidator.NOOP;
     private RpcServerListener listener = RpcServerListener.NOOP;
+    private RpcPayloadEncryption payloadEncryption = RpcPayloadEncryption.NOOP;
 
     RpcServerBuilder(final RpcChannel channel) {
         if (channel == null) {
@@ -64,13 +66,24 @@ public final class RpcServerBuilder {
         return this;
     }
 
+    public RpcServerBuilder payloadEncryption(
+            final RpcPayloadEncryption payloadEncryption
+    ) {
+        if (payloadEncryption == null) {
+            throw new IllegalArgumentException("payloadEncryption must not be null");
+        }
+        this.payloadEncryption = payloadEncryption;
+        return this;
+    }
+
     public RpcServer build() {
         return new RpcServer(
                 this.channel,
                 List.copyOf(this.interceptors),
                 this.exceptionMapper,
                 this.requestValidator,
-                this.listener
+                this.listener,
+                this.payloadEncryption
         );
     }
 }

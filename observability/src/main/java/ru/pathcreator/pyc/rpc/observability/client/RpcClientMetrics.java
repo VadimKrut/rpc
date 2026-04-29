@@ -4,6 +4,7 @@ import ru.pathcreator.pyc.rpc.client.RpcClientBuilder;
 import ru.pathcreator.pyc.rpc.client.listener.RpcClientListener;
 import ru.pathcreator.pyc.rpc.contract.RpcMethodContract;
 import ru.pathcreator.pyc.rpc.core.exception.RpcCallTimeoutException;
+import ru.pathcreator.pyc.rpc.core.exception.RpcPublishTimeoutException;
 import ru.pathcreator.pyc.rpc.observability.InternalMetricsSupport;
 
 import java.util.ArrayList;
@@ -139,7 +140,7 @@ public final class RpcClientMetrics {
                 final long latencyNs,
                 final Throwable error
         ) {
-            if (error instanceof RpcCallTimeoutException) {
+            if (error instanceof RpcCallTimeoutException || error instanceof RpcPublishTimeoutException) {
                 this.timeouts.increment();
             } else {
                 this.localFailures.increment();

@@ -1,5 +1,6 @@
 package ru.pathcreator.pyc.rpc.client;
 
+import org.agrona.DirectBuffer;
 import org.agrona.ExpandableArrayBuffer;
 import org.agrona.collections.Int2ObjectHashMap;
 import ru.pathcreator.pyc.rpc.client.call.RpcClientCall;
@@ -16,6 +17,7 @@ import ru.pathcreator.pyc.rpc.core.RpcChannel;
 import ru.pathcreator.pyc.rpc.core.codex.RpcEnvelope;
 import ru.pathcreator.pyc.rpc.core.codex.RpcResponseFrame;
 import ru.pathcreator.pyc.rpc.core.serialization.RpcCodecSupport;
+import ru.pathcreator.pyc.rpc.encryption.RpcPayloadEncryption;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -26,13 +28,17 @@ public final class RpcClient {
     private final long defaultTimeoutNs;
     private final boolean fastPathEligible;
     private final boolean listenerEnabled;
+    private final boolean payloadEncryptionEnabled;
     private final Object bindingsLock = new Object();
     private final List<RpcClientInterceptor> interceptors;
     private final RpcClientListener listener;
+    private final RpcPayloadEncryption payloadEncryption;
     private final RpcClientRequestValidator requestValidator;
     private final RpcClientResponseValidator responseValidator;
     private volatile Int2ObjectHashMap<ClientMethodBinding<?, ?>> bindings = new Int2ObjectHashMap<>();
     private final ThreadLocal<ExpandableArrayBuffer> requestBuffers = ThreadLocal.withInitial(() -> new ExpandableArrayBuffer(512));
+    private final ThreadLocal<ExpandableArrayBuffer> plainRequestBuffers = ThreadLocal.withInitial(() -> new ExpandableArrayBuffer(512));
+    private final ThreadLocal<ExpandableArrayBuffer> decryptedResponseBuffers = ThreadLocal.withInitial(() -> new ExpandableArrayBuffer(512));
 
     RpcClient(
             final RpcChannel channel,
@@ -40,7 +46,8 @@ public final class RpcClient {
             final RpcClientRequestValidator requestValidator,
             final RpcClientResponseValidator responseValidator,
             final List<RpcClientInterceptor> interceptors,
-            final RpcClientListener listener
+            final RpcClientListener listener,
+            final RpcPayloadEncryption payloadEncryption
     ) {
         this.channel = channel;
         this.defaultTimeoutNs = defaultTimeoutNs;
@@ -48,7 +55,9 @@ public final class RpcClient {
         this.responseValidator = responseValidator;
         this.interceptors = interceptors;
         this.listener = listener;
+        this.payloadEncryption = payloadEncryption;
         this.listenerEnabled = listener != RpcClientListener.NOOP;
+        this.payloadEncryptionEnabled = payloadEncryption != RpcPayloadEncryption.NOOP;
         this.fastPathEligible = interceptors.isEmpty()
                                 && requestValidator == RpcClientRequestValidator.NOOP
                                 && responseValidator == RpcClientResponseValidator.NOOP;
@@ -240,9 +249,38 @@ public final class RpcClient {
                 final Q request,
                 final long timeoutNs
         ) {
+            if (RpcClient.this.payloadEncryptionEnabled) {
+                return this.sendEncrypted(request, timeoutNs);
+            }
             final ExpandableArrayBuffer requestBuffer = RpcClient.this.requestBuffers.get();
             final int payloadLength = this.requestCodec.encode(
                     request,
+                    requestBuffer,
+                    RpcEnvelope.HEADER_LENGTH
+            );
+            return RpcClient.this.channel.sendFrame(
+                    timeoutNs,
+                    payloadLength,
+                    this.method.requestMessageTypeId(),
+                    requestBuffer
+            );
+        }
+
+        private RpcResponseFrame sendEncrypted(
+                final Q request,
+                final long timeoutNs
+        ) {
+            final ExpandableArrayBuffer plainRequestBuffer = RpcClient.this.plainRequestBuffers.get();
+            final int plainPayloadLength = this.requestCodec.encode(
+                    request,
+                    plainRequestBuffer,
+                    0
+            );
+            final ExpandableArrayBuffer requestBuffer = RpcClient.this.requestBuffers.get();
+            final int payloadLength = RpcClient.this.payloadEncryption.encrypt(
+                    plainRequestBuffer,
+                    0,
+                    plainPayloadLength,
                     requestBuffer,
                     RpcEnvelope.HEADER_LENGTH
             );
@@ -258,6 +296,9 @@ public final class RpcClient {
                 final RpcResponseFrame frame
         ) {
             this.ensureExpectedResponseMessageTypeId(frame);
+            if (RpcClient.this.payloadEncryptionEnabled) {
+                return this.decodeEncryptedFrame(frame);
+            }
             if (!frame.isSuccess()) {
                 return new RpcClientResult<>(
                         frame.statusCode(),
@@ -278,6 +319,37 @@ public final class RpcClient {
             );
         }
 
+        private RpcClientResult<R> decodeEncryptedFrame(
+                final RpcResponseFrame frame
+        ) {
+            final ExpandableArrayBuffer decryptedBuffer = RpcClient.this.decryptedResponseBuffers.get();
+            final int payloadLength = RpcClient.this.payloadEncryption.decrypt(
+                    frame.buffer(),
+                    frame.payloadOffset(),
+                    frame.payloadLength(),
+                    decryptedBuffer,
+                    0
+            );
+            if (!frame.isSuccess()) {
+                return new RpcClientResult<>(
+                        frame.statusCode(),
+                        frame.messageTypeId(),
+                        frame.correlationId(),
+                        payloadLength,
+                        null,
+                        this.payloadText(decryptedBuffer, 0, payloadLength)
+                );
+            }
+            return new RpcClientResult<>(
+                    frame.statusCode(),
+                    frame.messageTypeId(),
+                    frame.correlationId(),
+                    payloadLength,
+                    this.responseCodec.decode(decryptedBuffer, 0, payloadLength),
+                    null
+            );
+        }
+
         private void ensureExpectedResponseMessageTypeId(
                 final RpcResponseFrame frame
         ) {
@@ -292,8 +364,16 @@ public final class RpcClient {
         private String payloadText(
                 final RpcResponseFrame frame
         ) {
-            final byte[] text = new byte[frame.payloadLength()];
-            frame.buffer().getBytes(frame.payloadOffset(), text);
+            return this.payloadText(frame.buffer(), frame.payloadOffset(), frame.payloadLength());
+        }
+
+        private String payloadText(
+                final DirectBuffer buffer,
+                final int offset,
+                final int length
+        ) {
+            final byte[] text = new byte[length];
+            buffer.getBytes(offset, text);
             return new String(text, StandardCharsets.UTF_8);
         }
 

@@ -8,6 +8,7 @@ import ru.pathcreator.pyc.rpc.core.RpcChannel;
 import ru.pathcreator.pyc.rpc.core.codex.RpcEnvelope;
 import ru.pathcreator.pyc.rpc.core.codex.RpcStatusCodes;
 import ru.pathcreator.pyc.rpc.core.serialization.RpcCodecSupport;
+import ru.pathcreator.pyc.rpc.encryption.RpcPayloadEncryption;
 import ru.pathcreator.pyc.rpc.server.context.RpcServerContext;
 import ru.pathcreator.pyc.rpc.server.error.RpcServerErrorResponse;
 import ru.pathcreator.pyc.rpc.server.error.RpcServerExceptionMapper;
@@ -28,22 +29,29 @@ public final class RpcServer {
     private final RpcServerRequestValidator requestValidator;
     private final RpcServerListener listener;
     private final boolean listenerEnabled;
+    private final boolean payloadEncryptionEnabled;
+    private final RpcPayloadEncryption payloadEncryption;
     private final IntHashSet registeredRequestMessageTypeIds = new IntHashSet();
     private final ThreadLocal<ExpandableArrayBuffer> responseBuffers = ThreadLocal.withInitial(() -> new ExpandableArrayBuffer(512));
+    private final ThreadLocal<ExpandableArrayBuffer> plainResponseBuffers = ThreadLocal.withInitial(() -> new ExpandableArrayBuffer(512));
+    private final ThreadLocal<ExpandableArrayBuffer> decryptedRequestBuffers = ThreadLocal.withInitial(() -> new ExpandableArrayBuffer(512));
 
     RpcServer(
             final RpcChannel channel,
             final List<RpcServerInterceptor> interceptors,
             final RpcServerExceptionMapper exceptionMapper,
             final RpcServerRequestValidator requestValidator,
-            final RpcServerListener listener
+            final RpcServerListener listener,
+            final RpcPayloadEncryption payloadEncryption
     ) {
         this.channel = channel;
         this.exceptionMapper = exceptionMapper;
         this.requestValidator = requestValidator;
         this.interceptors = interceptors;
         this.listener = listener;
+        this.payloadEncryption = payloadEncryption;
         this.listenerEnabled = listener != RpcServerListener.NOOP;
+        this.payloadEncryptionEnabled = payloadEncryption != RpcPayloadEncryption.NOOP;
     }
 
     public static RpcServerBuilder builder(
@@ -91,7 +99,19 @@ public final class RpcServer {
                         length
                 );
                 try {
-                    request = requestCodec.decode(buffer, offset, length);
+                    if (this.payloadEncryptionEnabled) {
+                        final ExpandableArrayBuffer decryptedRequestBuffer = this.decryptedRequestBuffers.get();
+                        final int decryptedLength = this.payloadEncryption.decrypt(
+                                buffer,
+                                offset,
+                                length,
+                                decryptedRequestBuffer,
+                                0
+                        );
+                        request = requestCodec.decode(decryptedRequestBuffer, 0, decryptedLength);
+                    } else {
+                        request = requestCodec.decode(buffer, offset, length);
+                    }
                     this.requestValidator.validate(context, request);
                     final R response = method.responseType().cast(invocation.proceed(context, request));
                     if (response == null) {
@@ -100,7 +120,20 @@ public final class RpcServer {
                         );
                     }
                     final ExpandableArrayBuffer responseBuffer = this.responseBuffers.get();
-                    final int payloadLength = responseCodec.encode(response, responseBuffer, RpcEnvelope.HEADER_LENGTH);
+                    final int payloadLength;
+                    if (this.payloadEncryptionEnabled) {
+                        final ExpandableArrayBuffer plainResponseBuffer = this.plainResponseBuffers.get();
+                        final int plainPayloadLength = responseCodec.encode(response, plainResponseBuffer, 0);
+                        payloadLength = this.payloadEncryption.encrypt(
+                                plainResponseBuffer,
+                                0,
+                                plainPayloadLength,
+                                responseBuffer,
+                                RpcEnvelope.HEADER_LENGTH
+                        );
+                    } else {
+                        payloadLength = responseCodec.encode(response, responseBuffer, RpcEnvelope.HEADER_LENGTH);
+                    }
                     this.channel.reply(
                             payloadLength,
                             method.responseMessageTypeId(),
@@ -114,10 +147,26 @@ public final class RpcServer {
                     }
                     final RpcServerErrorResponse errorResponse = safeErrorResponse(request, error, method);
                     final ExpandableArrayBuffer responseBuffer = this.responseBuffers.get();
-                    final int payloadLength = responseBuffer.putStringWithoutLengthUtf8(
-                            RpcEnvelope.HEADER_LENGTH,
-                            errorResponse.message()
-                    );
+                    final int payloadLength;
+                    if (this.payloadEncryptionEnabled) {
+                        final ExpandableArrayBuffer plainResponseBuffer = this.plainResponseBuffers.get();
+                        final int plainPayloadLength = plainResponseBuffer.putStringWithoutLengthUtf8(
+                                0,
+                                errorResponse.message()
+                        );
+                        payloadLength = this.payloadEncryption.encrypt(
+                                plainResponseBuffer,
+                                0,
+                                plainPayloadLength,
+                                responseBuffer,
+                                RpcEnvelope.HEADER_LENGTH
+                        );
+                    } else {
+                        payloadLength = responseBuffer.putStringWithoutLengthUtf8(
+                                RpcEnvelope.HEADER_LENGTH,
+                                errorResponse.message()
+                        );
+                    }
                     this.channel.reply(
                             payloadLength,
                             method.responseMessageTypeId(),

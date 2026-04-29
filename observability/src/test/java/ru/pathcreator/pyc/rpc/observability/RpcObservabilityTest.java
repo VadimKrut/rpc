@@ -14,10 +14,10 @@ import ru.pathcreator.pyc.rpc.core.exception.RpcCallTimeoutException;
 import ru.pathcreator.pyc.rpc.core.serialization.RpcCodecSupport;
 import ru.pathcreator.pyc.rpc.observability.client.RpcClientMethodMetricsSnapshot;
 import ru.pathcreator.pyc.rpc.observability.client.RpcClientMetrics;
-import ru.pathcreator.pyc.rpc.observability.server.RpcServerMethodMetricsSnapshot;
-import ru.pathcreator.pyc.rpc.observability.server.RpcServerMetrics;
 import ru.pathcreator.pyc.rpc.observability.fixture.MetricsEchoRequest;
 import ru.pathcreator.pyc.rpc.observability.fixture.MetricsEchoResponse;
+import ru.pathcreator.pyc.rpc.observability.server.RpcServerMethodMetricsSnapshot;
+import ru.pathcreator.pyc.rpc.observability.server.RpcServerMetrics;
 import ru.pathcreator.pyc.rpc.server.RpcServer;
 import ru.pathcreator.pyc.rpc.server.error.RpcStatusException;
 
@@ -62,17 +62,18 @@ final class RpcObservabilityTest {
             });
             pair.serverChannel().registerRequestHandler(timeoutMethod.requestMessageTypeId(), (offset, length, correlationId, buffer) -> {
             });
+            awaitConnectionSetup();
 
             final RpcClientMetrics metrics = new RpcClientMetrics();
             final RpcClient client = metrics.attach(
-                    RpcClient.builder(pair.clientChannel()).defaultTimeoutNs(20_000_000L)
+                    RpcClient.builder(pair.clientChannel()).defaultTimeoutNs(TIMEOUT_NS)
             ).build();
 
             client.send(echoMethod, new MetricsEchoRequest(UUID.randomUUID(), "ok", 1));
             client.exchange(echoMethod, new MetricsEchoRequest(UUID.randomUUID(), "bad", 1));
             assertThrows(
                     RpcCallTimeoutException.class,
-                    () -> client.send(timeoutMethod, new MetricsEchoRequest(UUID.randomUUID(), "slow", 1))
+                    () -> client.send(timeoutMethod, new MetricsEchoRequest(UUID.randomUUID(), "slow", 1), 20_000_000L)
             );
 
             final RpcClientMethodMetricsSnapshot echo = metrics.snapshot().methods().stream()
@@ -118,6 +119,7 @@ final class RpcObservabilityTest {
                 }
                 return new MetricsEchoResponse(request.requestId(), request.message().toUpperCase(), request.amount());
             });
+            awaitConnectionSetup();
 
             final MetricsEchoResponse success = pair.exchange(method, new MetricsEchoRequest(UUID.randomUUID(), "ok", 2));
             assertEquals("OK", success.message());
@@ -156,6 +158,15 @@ final class RpcObservabilityTest {
                 )
         );
         return new ChannelPair(runtime, clientChannel, serverChannel);
+    }
+
+    private static void awaitConnectionSetup() {
+        try {
+            Thread.sleep(200L);
+        } catch (final InterruptedException error) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("connection setup interrupted", error);
+        }
     }
 
     private record ChannelPair(

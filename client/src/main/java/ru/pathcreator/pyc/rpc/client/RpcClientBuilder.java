@@ -5,6 +5,7 @@ import ru.pathcreator.pyc.rpc.client.pipeline.RpcClientInterceptor;
 import ru.pathcreator.pyc.rpc.client.pipeline.RpcClientRequestValidator;
 import ru.pathcreator.pyc.rpc.client.pipeline.RpcClientResponseValidator;
 import ru.pathcreator.pyc.rpc.core.RpcChannel;
+import ru.pathcreator.pyc.rpc.encryption.RpcPayloadEncryption;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -17,6 +18,7 @@ public final class RpcClientBuilder {
     private final List<RpcClientInterceptor> interceptors = new ArrayList<>();
     private RpcClientRequestValidator requestValidator = RpcClientRequestValidator.NOOP;
     private RpcClientResponseValidator responseValidator = RpcClientResponseValidator.NOOP;
+    private RpcPayloadEncryption payloadEncryption = RpcPayloadEncryption.NOOP;
 
     RpcClientBuilder(final RpcChannel channel) {
         if (channel == null) {
@@ -75,6 +77,16 @@ public final class RpcClientBuilder {
         return this;
     }
 
+    public RpcClientBuilder payloadEncryption(
+            final RpcPayloadEncryption payloadEncryption
+    ) {
+        if (payloadEncryption == null) {
+            throw new IllegalArgumentException("payloadEncryption must not be null");
+        }
+        this.payloadEncryption = payloadEncryption;
+        return this;
+    }
+
     public RpcClient build() {
         return new RpcClient(
                 this.channel,
@@ -82,7 +94,8 @@ public final class RpcClientBuilder {
                 this.requestValidator,
                 this.responseValidator,
                 List.copyOf(this.interceptors),
-                this.listener
+                this.listener,
+                this.payloadEncryption
         );
     }
 }

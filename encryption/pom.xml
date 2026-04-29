@@ -9,21 +9,13 @@
         <version>0.0.1</version>
     </parent>
 
-    <artifactId>server</artifactId>
+    <artifactId>encryption</artifactId>
     <packaging>jar</packaging>
 
     <dependencies>
         <dependency>
-            <groupId>ru.pathcreator.pyc</groupId>
-            <artifactId>contract</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>ru.pathcreator.pyc</groupId>
-            <artifactId>core</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>ru.pathcreator.pyc</groupId>
-            <artifactId>encryption</artifactId>
+            <groupId>org.agrona</groupId>
+            <artifactId>agrona</artifactId>
         </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
@@ -33,7 +25,7 @@
     </dependencies>
 
     <build>
-        <finalName>server</finalName>
+        <finalName>encryption</finalName>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
