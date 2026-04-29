@@ -47,6 +47,11 @@
             </dependency>
             <dependency>
                 <groupId>ru.pathcreator.pyc</groupId>
+                <artifactId>observability</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>ru.pathcreator.pyc</groupId>
                 <artifactId>server</artifactId>
                 <version>${project.version}</version>
             </dependency>
@@ -113,6 +118,7 @@
         <module>contract</module>
         <module>core</module>
         <module>client</module>
+        <module>observability</module>
         <module>server</module>
         <module>serialization</module>
     </modules>

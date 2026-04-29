@@ -17,6 +17,7 @@ import ru.pathcreator.pyc.rpc.core.codex.RpcStatusCodes;
 import ru.pathcreator.pyc.rpc.core.collection.WaitersTable;
 import ru.pathcreator.pyc.rpc.core.config.RpcChannelConfig;
 import ru.pathcreator.pyc.rpc.core.exception.RpcCallTimeoutException;
+import ru.pathcreator.pyc.rpc.core.exception.RpcPublishTimeoutException;
 import ru.pathcreator.pyc.rpc.core.exception.RpcRemoteException;
 import ru.pathcreator.pyc.rpc.core.generator.CorrelationIdGenerator;
 import ru.pathcreator.pyc.rpc.core.generator.YieldThenParkIdleStrategy;
@@ -149,14 +150,15 @@ public final class RpcChannel implements AutoCloseable {
     ) {
         final WrapperThread wrapper = new WrapperThread(Thread.currentThread());
         final long correlationId = this.correlationIds.nextId();
+        final long deadline = System.nanoTime() + timeoutNs;
         this.waiters.put(correlationId, wrapper);
         try {
-            this.publish(0, RpcStatusCodes.OK, payloadLength, correlationId, requestMessageTypeId, requestBuffer);
+            this.publish(0, RpcStatusCodes.OK, payloadLength, requestMessageTypeId, correlationId, deadline, requestBuffer);
         } catch (final RuntimeException problem) {
             this.waiters.remove(correlationId);
             throw problem;
         }
-        return this.await(timeoutNs, correlationId, wrapper);
+        return this.await(deadline, correlationId, wrapper);
     }
 
     public void reply(
@@ -179,8 +181,9 @@ public final class RpcChannel implements AutoCloseable {
                 RpcEnvelope.FLAG_RESPONSE,
                 statusCode,
                 payloadLength,
-                correlationId,
                 responseMessageTypeId,
+                correlationId,
+                Long.MAX_VALUE,
                 responseBuffer
         );
     }
@@ -206,8 +209,9 @@ public final class RpcChannel implements AutoCloseable {
             final int flags,
             final int statusCode,
             final int payloadLength,
-            final long correlationId,
             final int requestMessageTypeId,
+            final long correlationId,
+            final long deadline,
             final MutableDirectBuffer requestBuffer
     ) {
         final int totalLength = RpcEnvelope.HEADER_LENGTH + payloadLength;
@@ -218,6 +222,9 @@ public final class RpcChannel implements AutoCloseable {
             final long result = this.publication.offer(requestBuffer, 0, totalLength);
             if (result > 0) {
                 return;
+            }
+            if (deadline != Long.MAX_VALUE && System.nanoTime() >= deadline) {
+                throw new RpcPublishTimeoutException(correlationId);
             }
             idleStrategy.idle();
         }
@@ -268,11 +275,10 @@ public final class RpcChannel implements AutoCloseable {
     }
 
     private UnsafeBuffer await(
-            final long timeoutNs,
+            final long deadline,
             final long correlationId,
             final WrapperThread wrapper
     ) {
-        final long deadline = System.nanoTime() + timeoutNs;
         while (wrapper.bytes() == null) {
             final long remaining = deadline - System.nanoTime();
             if (remaining <= 0L) {

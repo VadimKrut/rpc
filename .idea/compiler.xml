@@ -10,8 +10,9 @@
         <module name="core" />
         <module name="codec" />
         <module name="server" />
-        <module name="client" />
         <module name="contract" />
+        <module name="client" />
+        <module name="observability" />
       </profile>
     </annotationProcessing>
     <bytecodeTargetLevel>

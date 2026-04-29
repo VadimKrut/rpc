@@ -11,6 +11,8 @@
     <file url="file://$PROJECT_DIR$/core/src/main/resources" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/native/src/main/java" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/native/src/main/resources" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/observability/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/observability/src/main/resources" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/rpc-core/${project.parent.basedir}/src/main/java" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/rpc-core/src/main/java" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/rpc-core/src/main/resources" charset="UTF-8" />

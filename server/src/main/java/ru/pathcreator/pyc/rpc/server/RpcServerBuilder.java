@@ -2,6 +2,7 @@ package ru.pathcreator.pyc.rpc.server;
 
 import ru.pathcreator.pyc.rpc.core.RpcChannel;
 import ru.pathcreator.pyc.rpc.server.error.RpcServerExceptionMapper;
+import ru.pathcreator.pyc.rpc.server.listener.RpcServerListener;
 import ru.pathcreator.pyc.rpc.server.pipeline.RpcServerInterceptor;
 import ru.pathcreator.pyc.rpc.server.pipeline.RpcServerRequestValidator;
 
@@ -14,6 +15,7 @@ public final class RpcServerBuilder {
     private final List<RpcServerInterceptor> interceptors = new ArrayList<>();
     private RpcServerExceptionMapper exceptionMapper = RpcServerExceptionMapper.DEFAULT;
     private RpcServerRequestValidator requestValidator = RpcServerRequestValidator.NOOP;
+    private RpcServerListener listener = RpcServerListener.NOOP;
 
     RpcServerBuilder(final RpcChannel channel) {
         if (channel == null) {
@@ -52,12 +54,23 @@ public final class RpcServerBuilder {
         return this;
     }
 
+    public RpcServerBuilder listener(
+            final RpcServerListener listener
+    ) {
+        if (listener == null) {
+            throw new IllegalArgumentException("listener must not be null");
+        }
+        this.listener = listener;
+        return this;
+    }
+
     public RpcServer build() {
         return new RpcServer(
                 this.channel,
                 List.copyOf(this.interceptors),
                 this.exceptionMapper,
-                this.requestValidator
+                this.requestValidator,
+                this.listener
         );
     }
 }

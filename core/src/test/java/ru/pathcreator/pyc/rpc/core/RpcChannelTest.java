@@ -7,6 +7,7 @@ import ru.pathcreator.pyc.rpc.core.codex.RpcResponseFrame;
 import ru.pathcreator.pyc.rpc.core.codex.RpcStatusCodes;
 import ru.pathcreator.pyc.rpc.core.config.RpcChannelConfig;
 import ru.pathcreator.pyc.rpc.core.exception.RpcCallTimeoutException;
+import ru.pathcreator.pyc.rpc.core.exception.RpcPublishTimeoutException;
 import ru.pathcreator.pyc.rpc.core.exception.RpcRemoteException;
 import ru.pathcreator.pyc.rpc.core.fixture.CoreEchoRequest;
 import ru.pathcreator.pyc.rpc.core.fixture.CoreEchoResponse;
@@ -179,6 +180,7 @@ final class RpcChannelTest {
         try (ChannelPair pair = openChannels()) {
             pair.serverChannel().registerRequestHandler(REQUEST_MESSAGE_TYPE_ID, (offset, length, correlationId, buffer) -> {
             });
+            awaitConnectionSetup();
 
             final UnsafeBuffer requestBuffer = RpcCodecSupport.encode(
                     new CoreEchoRequest(UUID.randomUUID(), "abc", 4),
@@ -195,6 +197,39 @@ final class RpcChannelTest {
                             requestBuffer
                     )
             );
+        }
+    }
+
+    @Test
+    void shouldTimeoutWhenRequestCannotBePublished() {
+        final RpcRuntime runtime = RpcRuntime.launchEmbedded();
+        final int basePort = PORTS.getAndAdd(2);
+        final int streamId = STREAMS.getAndIncrement();
+        final RpcChannel channel = runtime.createChannel(
+                RpcChannelConfig.createDefault(
+                        "aeron:udp?endpoint=localhost:" + basePort,
+                        "aeron:udp?endpoint=localhost:" + (basePort + 1),
+                        streamId
+                )
+        );
+        try {
+            final UnsafeBuffer requestBuffer = RpcCodecSupport.encode(
+                    new CoreEchoRequest(UUID.randomUUID(), "abc", 4),
+                    RpcEnvelope.HEADER_LENGTH,
+                    CoreEchoRequest.class
+            );
+
+            assertThrows(
+                    RpcPublishTimeoutException.class,
+                    () -> channel.sendRaw(
+                            10_000_000L,
+                            requestBuffer.capacity() - RpcEnvelope.HEADER_LENGTH,
+                            REQUEST_MESSAGE_TYPE_ID,
+                            requestBuffer
+                    )
+            );
+        } finally {
+            runtime.close();
         }
     }
 
@@ -217,6 +252,15 @@ final class RpcChannelTest {
                 )
         );
         return new ChannelPair(runtime, clientChannel, serverChannel);
+    }
+
+    private static void awaitConnectionSetup() {
+        try {
+            Thread.sleep(200L);
+        } catch (final InterruptedException error) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("connection setup interrupted", error);
+        }
     }
 
     private static String payloadText(final RpcResponseFrame response) {

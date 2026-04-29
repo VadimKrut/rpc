@@ -1,5 +1,6 @@
 package ru.pathcreator.pyc.rpc.client;
 
+import ru.pathcreator.pyc.rpc.client.listener.RpcClientListener;
 import ru.pathcreator.pyc.rpc.client.pipeline.RpcClientInterceptor;
 import ru.pathcreator.pyc.rpc.client.pipeline.RpcClientRequestValidator;
 import ru.pathcreator.pyc.rpc.client.pipeline.RpcClientResponseValidator;
@@ -11,8 +12,9 @@ import java.util.List;
 public final class RpcClientBuilder {
 
     private final RpcChannel channel;
-    private final List<RpcClientInterceptor> interceptors = new ArrayList<>();
     private long defaultTimeoutNs = 5_000_000_000L;
+    private RpcClientListener listener = RpcClientListener.NOOP;
+    private final List<RpcClientInterceptor> interceptors = new ArrayList<>();
     private RpcClientRequestValidator requestValidator = RpcClientRequestValidator.NOOP;
     private RpcClientResponseValidator responseValidator = RpcClientResponseValidator.NOOP;
 
@@ -63,13 +65,24 @@ public final class RpcClientBuilder {
         return this;
     }
 
+    public RpcClientBuilder listener(
+            final RpcClientListener listener
+    ) {
+        if (listener == null) {
+            throw new IllegalArgumentException("listener must not be null");
+        }
+        this.listener = listener;
+        return this;
+    }
+
     public RpcClient build() {
         return new RpcClient(
                 this.channel,
                 this.defaultTimeoutNs,
                 this.requestValidator,
                 this.responseValidator,
-                List.copyOf(this.interceptors)
+                List.copyOf(this.interceptors),
+                this.listener
         );
     }
 }

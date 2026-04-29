@@ -6,12 +6,14 @@ import ru.pathcreator.pyc.rpc.codec.SerializationCodec;
 import ru.pathcreator.pyc.rpc.contract.RpcMethodContract;
 import ru.pathcreator.pyc.rpc.core.RpcChannel;
 import ru.pathcreator.pyc.rpc.core.codex.RpcEnvelope;
+import ru.pathcreator.pyc.rpc.core.codex.RpcStatusCodes;
 import ru.pathcreator.pyc.rpc.core.serialization.RpcCodecSupport;
 import ru.pathcreator.pyc.rpc.server.context.RpcServerContext;
 import ru.pathcreator.pyc.rpc.server.error.RpcServerErrorResponse;
 import ru.pathcreator.pyc.rpc.server.error.RpcServerExceptionMapper;
 import ru.pathcreator.pyc.rpc.server.handler.RpcServerContextHandler;
 import ru.pathcreator.pyc.rpc.server.handler.RpcServerHandler;
+import ru.pathcreator.pyc.rpc.server.listener.RpcServerListener;
 import ru.pathcreator.pyc.rpc.server.pipeline.RpcServerInterceptor;
 import ru.pathcreator.pyc.rpc.server.pipeline.RpcServerInvocation;
 import ru.pathcreator.pyc.rpc.server.pipeline.RpcServerRequestValidator;
@@ -24,6 +26,8 @@ public final class RpcServer {
     private final List<RpcServerInterceptor> interceptors;
     private final RpcServerExceptionMapper exceptionMapper;
     private final RpcServerRequestValidator requestValidator;
+    private final RpcServerListener listener;
+    private final boolean listenerEnabled;
     private final IntHashSet registeredRequestMessageTypeIds = new IntHashSet();
     private final ThreadLocal<ExpandableArrayBuffer> responseBuffers = ThreadLocal.withInitial(() -> new ExpandableArrayBuffer(512));
 
@@ -31,12 +35,15 @@ public final class RpcServer {
             final RpcChannel channel,
             final List<RpcServerInterceptor> interceptors,
             final RpcServerExceptionMapper exceptionMapper,
-            final RpcServerRequestValidator requestValidator
+            final RpcServerRequestValidator requestValidator,
+            final RpcServerListener listener
     ) {
         this.channel = channel;
         this.exceptionMapper = exceptionMapper;
         this.requestValidator = requestValidator;
         this.interceptors = interceptors;
+        this.listener = listener;
+        this.listenerEnabled = listener != RpcServerListener.NOOP;
     }
 
     public static RpcServerBuilder builder(
@@ -71,6 +78,10 @@ public final class RpcServer {
             final SerializationCodec<R> responseCodec = RpcCodecSupport.codecFor(method.responseType());
             final RpcServerInvocation invocation = this.buildInvocation(method, handler);
             this.channel.registerRequestHandler(requestMessageTypeId, (offset, length, correlationId, buffer) -> {
+                final long startNs = this.listenerEnabled ? System.nanoTime() : 0L;
+                if (this.listenerEnabled) {
+                    this.listener.onStart(method, correlationId, length);
+                }
                 Q request = null;
                 final RpcServerContext context = new RpcServerContext(
                         method,
@@ -96,6 +107,7 @@ public final class RpcServer {
                             correlationId,
                             responseBuffer
                     );
+                    this.notifySuccess(method, correlationId, startNs, length, payloadLength);
                 } catch (final Throwable error) {
                     if (isFatal(error)) {
                         throwUnchecked(error);
@@ -112,6 +124,15 @@ public final class RpcServer {
                             errorResponse.statusCode(),
                             correlationId,
                             responseBuffer
+                    );
+                    this.notifyFailure(
+                            method,
+                            correlationId,
+                            startNs,
+                            length,
+                            payloadLength,
+                            errorResponse.statusCode(),
+                            error
                     );
                 }
             });
@@ -160,6 +181,49 @@ public final class RpcServer {
 
     private static void throwUnchecked(final Throwable error) {
         RpcServer.<RuntimeException>throwUnchecked0(error);
+    }
+
+    private void notifySuccess(
+            final RpcMethodContract<?, ?> method,
+            final long correlationId,
+            final long startNs,
+            final int requestPayloadLength,
+            final int responsePayloadLength
+    ) {
+        if (!this.listenerEnabled) {
+            return;
+        }
+        this.listener.onSuccess(
+                method,
+                correlationId,
+                System.nanoTime() - startNs,
+                requestPayloadLength,
+                responsePayloadLength,
+                RpcStatusCodes.OK
+        );
+    }
+
+    private void notifyFailure(
+            final RpcMethodContract<?, ?> method,
+            final long correlationId,
+            final long startNs,
+            final int requestPayloadLength,
+            final int responsePayloadLength,
+            final int statusCode,
+            final Throwable error
+    ) {
+        if (!this.listenerEnabled) {
+            return;
+        }
+        this.listener.onFailure(
+                method,
+                correlationId,
+                System.nanoTime() - startNs,
+                requestPayloadLength,
+                responsePayloadLength,
+                statusCode,
+                error
+        );
     }
 
     @SuppressWarnings("unchecked")

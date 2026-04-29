@@ -4,6 +4,7 @@ import org.agrona.ExpandableArrayBuffer;
 import org.agrona.collections.Int2ObjectHashMap;
 import ru.pathcreator.pyc.rpc.client.call.RpcClientCall;
 import ru.pathcreator.pyc.rpc.client.context.RpcClientContext;
+import ru.pathcreator.pyc.rpc.client.listener.RpcClientListener;
 import ru.pathcreator.pyc.rpc.client.pipeline.RpcClientInterceptor;
 import ru.pathcreator.pyc.rpc.client.pipeline.RpcClientInvocation;
 import ru.pathcreator.pyc.rpc.client.pipeline.RpcClientRequestValidator;
@@ -24,8 +25,10 @@ public final class RpcClient {
     private final RpcChannel channel;
     private final long defaultTimeoutNs;
     private final boolean fastPathEligible;
+    private final boolean listenerEnabled;
     private final Object bindingsLock = new Object();
     private final List<RpcClientInterceptor> interceptors;
+    private final RpcClientListener listener;
     private final RpcClientRequestValidator requestValidator;
     private final RpcClientResponseValidator responseValidator;
     private volatile Int2ObjectHashMap<ClientMethodBinding<?, ?>> bindings = new Int2ObjectHashMap<>();
@@ -36,13 +39,16 @@ public final class RpcClient {
             final long defaultTimeoutNs,
             final RpcClientRequestValidator requestValidator,
             final RpcClientResponseValidator responseValidator,
-            final List<RpcClientInterceptor> interceptors
+            final List<RpcClientInterceptor> interceptors,
+            final RpcClientListener listener
     ) {
         this.channel = channel;
         this.defaultTimeoutNs = defaultTimeoutNs;
         this.requestValidator = requestValidator;
         this.responseValidator = responseValidator;
         this.interceptors = interceptors;
+        this.listener = listener;
+        this.listenerEnabled = listener != RpcClientListener.NOOP;
         this.fastPathEligible = interceptors.isEmpty()
                                 && requestValidator == RpcClientRequestValidator.NOOP
                                 && responseValidator == RpcClientResponseValidator.NOOP;
@@ -175,7 +181,18 @@ public final class RpcClient {
             if (timeoutNs <= 0L) {
                 throw new IllegalArgumentException("timeoutNs must be > 0");
             }
-            return this.decodeFrame(this.send(request, timeoutNs));
+            final long startNs = RpcClient.this.listenerEnabled ? System.nanoTime() : 0L;
+            if (RpcClient.this.listenerEnabled) {
+                RpcClient.this.listener.onStart(this.method, timeoutNs);
+            }
+            try {
+                final RpcClientResult<R> result = this.decodeFrame(this.send(request, timeoutNs));
+                this.notifyCompletion(timeoutNs, startNs, result);
+                return result;
+            } catch (final Throwable error) {
+                this.notifyFailure(timeoutNs, startNs, error);
+                throw error;
+            }
         }
 
         private RpcClientResult<R> exchangeWithPipeline(
@@ -188,12 +205,22 @@ public final class RpcClient {
             if (timeoutNs <= 0L) {
                 throw new IllegalArgumentException("timeoutNs must be > 0");
             }
-            final RpcClientContext context = new RpcClientContext(this.method, timeoutNs);
-            RpcClient.this.requestValidator.validate(context, request);
-            @SuppressWarnings("unchecked") final RpcClientResult<R> result =
-                    (RpcClientResult<R>) this.cachedInvocation.proceed(context, request);
-            RpcClient.this.responseValidator.validate(context, result);
-            return result;
+            final long startNs = RpcClient.this.listenerEnabled ? System.nanoTime() : 0L;
+            if (RpcClient.this.listenerEnabled) {
+                RpcClient.this.listener.onStart(this.method, timeoutNs);
+            }
+            try {
+                final RpcClientContext context = new RpcClientContext(this.method, timeoutNs);
+                RpcClient.this.requestValidator.validate(context, request);
+                @SuppressWarnings("unchecked") final RpcClientResult<R> result =
+                        (RpcClientResult<R>) this.cachedInvocation.proceed(context, request);
+                RpcClient.this.responseValidator.validate(context, result);
+                this.notifyCompletion(timeoutNs, startNs, result);
+                return result;
+            } catch (final Throwable error) {
+                this.notifyFailure(timeoutNs, startNs, error);
+                throw error;
+            }
         }
 
         private RpcClientInvocation buildInvocation() {
@@ -268,6 +295,50 @@ public final class RpcClient {
             final byte[] text = new byte[frame.payloadLength()];
             frame.buffer().getBytes(frame.payloadOffset(), text);
             return new String(text, StandardCharsets.UTF_8);
+        }
+
+        private void notifyCompletion(
+                final long timeoutNs,
+                final long startNs,
+                final RpcClientResult<R> result
+        ) {
+            if (!RpcClient.this.listenerEnabled) {
+                return;
+            }
+            final long latencyNs = System.nanoTime() - startNs;
+            if (result.isSuccess()) {
+                RpcClient.this.listener.onSuccess(
+                        this.method,
+                        timeoutNs,
+                        latencyNs,
+                        result.payloadLength(),
+                        result.statusCode()
+                );
+                return;
+            }
+            RpcClient.this.listener.onRemoteError(
+                    this.method,
+                    timeoutNs,
+                    latencyNs,
+                    result.payloadLength(),
+                    result.statusCode()
+            );
+        }
+
+        private void notifyFailure(
+                final long timeoutNs,
+                final long startNs,
+                final Throwable error
+        ) {
+            if (!RpcClient.this.listenerEnabled) {
+                return;
+            }
+            RpcClient.this.listener.onFailure(
+                    this.method,
+                    timeoutNs,
+                    System.nanoTime() - startNs,
+                    error
+            );
         }
     }
 }

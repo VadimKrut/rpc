@@ -14,6 +14,7 @@ import ru.pathcreator.pyc.rpc.core.codex.RpcEnvelope;
 import ru.pathcreator.pyc.rpc.core.codex.RpcStatusCodes;
 import ru.pathcreator.pyc.rpc.core.config.RpcChannelConfig;
 import ru.pathcreator.pyc.rpc.core.exception.RpcCallTimeoutException;
+import ru.pathcreator.pyc.rpc.core.exception.RpcPublishTimeoutException;
 import ru.pathcreator.pyc.rpc.core.exception.RpcRemoteException;
 import ru.pathcreator.pyc.rpc.server.RpcServer;
 import ru.pathcreator.pyc.rpc.server.error.RpcStatusException;
@@ -59,6 +60,7 @@ final class RpcClientTest {
                     request.message().toUpperCase(Locale.ROOT),
                     request.amount() + 10
             ));
+            awaitConnectionSetup();
 
             final RpcClient client = RpcClient.builder(pair.clientChannel())
                     .defaultTimeoutNs(DEFAULT_TIMEOUT_NS)
@@ -86,6 +88,7 @@ final class RpcClientTest {
                     request.message().toUpperCase(Locale.ROOT),
                     request.amount()
             ));
+            awaitConnectionSetup();
 
             final AtomicLong seenTimeout = new AtomicLong();
             final RpcClient client = RpcClient.builder(pair.clientChannel())
@@ -119,6 +122,7 @@ final class RpcClientTest {
             server.register(method, request -> {
                 throw new RpcStatusException(RpcStatusCodes.BAD_REQUEST, "message must not be blank");
             });
+            awaitConnectionSetup();
 
             final RpcClient client = RpcClient.builder(pair.clientChannel()).build();
 
@@ -150,6 +154,7 @@ final class RpcClientTest {
             server.register(method, request -> {
                 throw new RpcStatusException(RpcStatusCodes.METHOD_NOT_ALLOWED, "method not allowed");
             });
+            awaitConnectionSetup();
 
             final RpcClient client = RpcClient.builder(pair.clientChannel()).build();
 
@@ -215,6 +220,7 @@ final class RpcClientTest {
                     request.message(),
                     -1
             ));
+            awaitConnectionSetup();
 
             final RpcClient client = RpcClient.builder(pair.clientChannel())
                     .responseValidator((context, result) -> {
@@ -249,6 +255,7 @@ final class RpcClientTest {
                     request.message().toUpperCase(Locale.ROOT),
                     request.amount()
             ));
+            awaitConnectionSetup();
 
             final List<String> events = new ArrayList<>();
             final RpcClient client = RpcClient.builder(pair.clientChannel())
@@ -283,6 +290,7 @@ final class RpcClientTest {
         try (ChannelPair pair = openChannels()) {
             pair.serverChannel().registerRequestHandler(REQUEST_MESSAGE_TYPE_ID, (offset, length, correlationId, buffer) -> {
             });
+            awaitConnectionSetup();
 
             final RpcClient client = RpcClient.builder(pair.clientChannel())
                     .defaultTimeoutNs(10_000_000L)
@@ -299,6 +307,39 @@ final class RpcClientTest {
                     RpcCallTimeoutException.class,
                     () -> client.send(method, new ClientEchoRequest(UUID.randomUUID(), "slow", 1))
             );
+        }
+    }
+
+    @Test
+    void shouldPropagatePublishTimeout() {
+        final RpcRuntime runtime = RpcRuntime.launchEmbedded();
+        final int basePort = PORTS.getAndAdd(2);
+        final int streamId = STREAMS.getAndIncrement();
+        final RpcChannel clientChannel = runtime.createChannel(
+                RpcChannelConfig.createDefault(
+                        "aeron:udp?endpoint=localhost:" + basePort,
+                        "aeron:udp?endpoint=localhost:" + (basePort + 1),
+                        streamId
+                )
+        );
+        try {
+            final RpcClient client = RpcClient.builder(clientChannel)
+                    .defaultTimeoutNs(10_000_000L)
+                    .build();
+            final RpcMethodContract<ClientEchoRequest, ClientEchoResponse> method = RpcMethodContract.of(
+                    "client.publish-timeout",
+                    ClientEchoRequest.class,
+                    ClientEchoResponse.class,
+                    REQUEST_MESSAGE_TYPE_ID,
+                    RESPONSE_MESSAGE_TYPE_ID
+            );
+
+            assertThrows(
+                    RpcPublishTimeoutException.class,
+                    () -> client.send(method, new ClientEchoRequest(UUID.randomUUID(), "slow", 1))
+            );
+        } finally {
+            runtime.close();
         }
     }
 
@@ -378,6 +419,15 @@ final class RpcClientTest {
                 )
         );
         return new ChannelPair(runtime, clientChannel, serverChannel);
+    }
+
+    private static void awaitConnectionSetup() {
+        try {
+            Thread.sleep(200L);
+        } catch (final InterruptedException error) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("connection setup interrupted", error);
+        }
     }
 
     private record ChannelPair(
