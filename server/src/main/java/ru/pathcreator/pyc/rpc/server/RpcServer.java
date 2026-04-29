@@ -3,6 +3,7 @@ package ru.pathcreator.pyc.rpc.server;
 import org.agrona.ExpandableArrayBuffer;
 import org.agrona.collections.IntHashSet;
 import ru.pathcreator.pyc.rpc.codec.SerializationCodec;
+import ru.pathcreator.pyc.rpc.contract.RpcMethodContract;
 import ru.pathcreator.pyc.rpc.core.RpcChannel;
 import ru.pathcreator.pyc.rpc.core.codex.RpcEnvelope;
 import ru.pathcreator.pyc.rpc.core.serialization.RpcCodecSupport;
@@ -11,7 +12,6 @@ import ru.pathcreator.pyc.rpc.server.error.RpcServerErrorResponse;
 import ru.pathcreator.pyc.rpc.server.error.RpcServerExceptionMapper;
 import ru.pathcreator.pyc.rpc.server.handler.RpcServerContextHandler;
 import ru.pathcreator.pyc.rpc.server.handler.RpcServerHandler;
-import ru.pathcreator.pyc.rpc.server.handler.RpcServerMethod;
 import ru.pathcreator.pyc.rpc.server.pipeline.RpcServerInterceptor;
 import ru.pathcreator.pyc.rpc.server.pipeline.RpcServerInvocation;
 import ru.pathcreator.pyc.rpc.server.pipeline.RpcServerRequestValidator;
@@ -46,14 +46,14 @@ public final class RpcServer {
     }
 
     public synchronized <Q, R> RpcServer register(
-            final RpcServerMethod<Q, R> method,
+            final RpcMethodContract<Q, R> method,
             final RpcServerHandler<? super Q, ? extends R> handler
     ) {
         return this.register(method, (context, request) -> handler.handle(request));
     }
 
     public synchronized <Q, R> RpcServer register(
-            final RpcServerMethod<Q, R> method,
+            final RpcMethodContract<Q, R> method,
             final RpcServerContextHandler<? super Q, ? extends R> handler
     ) {
         if (method == null) {
@@ -123,7 +123,7 @@ public final class RpcServer {
     }
 
     private <Q, R> RpcServerInvocation buildInvocation(
-            final RpcServerMethod<Q, R> method,
+            final RpcMethodContract<Q, R> method,
             final RpcServerContextHandler<? super Q, ? extends R> handler
     ) {
         RpcServerInvocation invocation = (context, request) -> handler.handle(
@@ -141,7 +141,7 @@ public final class RpcServer {
     private RpcServerErrorResponse safeErrorResponse(
             final Object request,
             final Throwable error,
-            final RpcServerMethod<?, ?> method
+            final RpcMethodContract<?, ?> method
     ) {
         try {
             return this.exceptionMapper.toErrorResponse(method, request, error);

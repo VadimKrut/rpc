@@ -4,13 +4,13 @@ import org.agrona.ExpandableArrayBuffer;
 import org.agrona.collections.Int2ObjectHashMap;
 import ru.pathcreator.pyc.rpc.client.call.RpcClientCall;
 import ru.pathcreator.pyc.rpc.client.context.RpcClientContext;
-import ru.pathcreator.pyc.rpc.client.method.RpcClientMethod;
 import ru.pathcreator.pyc.rpc.client.pipeline.RpcClientInterceptor;
 import ru.pathcreator.pyc.rpc.client.pipeline.RpcClientInvocation;
 import ru.pathcreator.pyc.rpc.client.pipeline.RpcClientRequestValidator;
 import ru.pathcreator.pyc.rpc.client.pipeline.RpcClientResponseValidator;
 import ru.pathcreator.pyc.rpc.client.response.RpcClientResult;
 import ru.pathcreator.pyc.rpc.codec.SerializationCodec;
+import ru.pathcreator.pyc.rpc.contract.RpcMethodContract;
 import ru.pathcreator.pyc.rpc.core.RpcChannel;
 import ru.pathcreator.pyc.rpc.core.codex.RpcEnvelope;
 import ru.pathcreator.pyc.rpc.core.codex.RpcResponseFrame;
@@ -55,7 +55,7 @@ public final class RpcClient {
     }
 
     public <Q, R> RpcClientCall<Q, R> bind(
-            final RpcClientMethod<Q, R> method
+            final RpcMethodContract<Q, R> method
     ) {
         if (method == null) {
             throw new IllegalArgumentException("method must not be null");
@@ -64,14 +64,14 @@ public final class RpcClient {
     }
 
     public <Q, R> R send(
-            final RpcClientMethod<Q, R> method,
+            final RpcMethodContract<Q, R> method,
             final Q request
     ) {
         return this.bind(method).send(request);
     }
 
     public <Q, R> R send(
-            final RpcClientMethod<Q, R> method,
+            final RpcMethodContract<Q, R> method,
             final Q request,
             final long timeoutNs
     ) {
@@ -79,14 +79,14 @@ public final class RpcClient {
     }
 
     public <Q, R> RpcClientResult<R> exchange(
-            final RpcClientMethod<Q, R> method,
+            final RpcMethodContract<Q, R> method,
             final Q request
     ) {
         return this.bind(method).exchange(request);
     }
 
     public <Q, R> RpcClientResult<R> exchange(
-            final RpcClientMethod<Q, R> method,
+            final RpcMethodContract<Q, R> method,
             final Q request,
             final long timeoutNs
     ) {
@@ -95,10 +95,11 @@ public final class RpcClient {
 
     @SuppressWarnings("unchecked")
     private <Q, R> ClientMethodBinding<Q, R> bindingFor(
-            final RpcClientMethod<Q, R> method
+            final RpcMethodContract<Q, R> method
     ) {
         final ClientMethodBinding<?, ?> existing = this.bindings.get(method.requestMessageTypeId());
         if (existing != null) {
+            ensureMatchingMethod(existing, method);
             return (ClientMethodBinding<Q, R>) existing;
         }
         return this.createBindingSlow(method);
@@ -106,12 +107,13 @@ public final class RpcClient {
 
     @SuppressWarnings("unchecked")
     private <Q, R> ClientMethodBinding<Q, R> createBindingSlow(
-            final RpcClientMethod<Q, R> method
+            final RpcMethodContract<Q, R> method
     ) {
         synchronized (this.bindingsLock) {
             final Int2ObjectHashMap<ClientMethodBinding<?, ?>> current = this.bindings;
             final ClientMethodBinding<?, ?> existing = current.get(method.requestMessageTypeId());
             if (existing != null) {
+                ensureMatchingMethod(existing, method);
                 return (ClientMethodBinding<Q, R>) existing;
             }
             final ClientMethodBinding<Q, R> binding = new ClientMethodBinding<>(
@@ -127,16 +129,29 @@ public final class RpcClient {
         }
     }
 
+    private static void ensureMatchingMethod(
+            final ClientMethodBinding<?, ?> binding,
+            final RpcMethodContract<?, ?> method
+    ) {
+        if (!binding.method.equals(method)) {
+            throw new IllegalStateException(
+                    "requestMessageTypeId " + method.requestMessageTypeId()
+                    + " is already bound to contract '" + binding.method.name()
+                    + "', cannot reuse it for '" + method.name() + "'"
+            );
+        }
+    }
+
     private final class ClientMethodBinding<Q, R> {
 
-        private final RpcClientMethod<Q, R> method;
+        private final RpcMethodContract<Q, R> method;
         private final SerializationCodec<Q> requestCodec;
         private final SerializationCodec<R> responseCodec;
         private final RpcClientInvocation cachedInvocation;
         private final RpcClientCall<Q, R> call;
 
         private ClientMethodBinding(
-                final RpcClientMethod<Q, R> method,
+                final RpcMethodContract<Q, R> method,
                 final SerializationCodec<Q> requestCodec,
                 final SerializationCodec<R> responseCodec
         ) {

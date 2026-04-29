@@ -1,9 +1,9 @@
 package ru.pathcreator.pyc.rpc.client.context;
 
-import ru.pathcreator.pyc.rpc.client.method.RpcClientMethod;
+import ru.pathcreator.pyc.rpc.contract.RpcMethodContract;
 
 public record RpcClientContext(
-        RpcClientMethod<?, ?> method,
+        RpcMethodContract<?, ?> method,
         long timeoutNs
 ) {
 }

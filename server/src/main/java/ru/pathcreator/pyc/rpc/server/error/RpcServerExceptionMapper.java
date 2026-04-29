@@ -1,7 +1,7 @@
 package ru.pathcreator.pyc.rpc.server.error;
 
+import ru.pathcreator.pyc.rpc.contract.RpcMethodContract;
 import ru.pathcreator.pyc.rpc.core.codex.RpcStatusCodes;
-import ru.pathcreator.pyc.rpc.server.handler.RpcServerMethod;
 
 @FunctionalInterface
 public interface RpcServerExceptionMapper {
@@ -28,7 +28,7 @@ public interface RpcServerExceptionMapper {
     };
 
     RpcServerErrorResponse toErrorResponse(
-            RpcServerMethod<?, ?> method,
+            RpcMethodContract<?, ?> method,
             Object request,
             Throwable error
     );

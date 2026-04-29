@@ -1,16 +1,16 @@
 package ru.pathcreator.pyc.rpc.client.call;
 
-import ru.pathcreator.pyc.rpc.client.method.RpcClientMethod;
 import ru.pathcreator.pyc.rpc.client.response.RpcClientResult;
+import ru.pathcreator.pyc.rpc.contract.RpcMethodContract;
 
 public final class RpcClientCall<Q, R> {
 
     private final long defaultTimeoutNs;
     private final Dispatcher<Q, R> dispatcher;
-    private final RpcClientMethod<Q, R> method;
+    private final RpcMethodContract<Q, R> method;
 
     public RpcClientCall(
-            final RpcClientMethod<Q, R> method,
+            final RpcMethodContract<Q, R> method,
             final long defaultTimeoutNs,
             final Dispatcher<Q, R> dispatcher
     ) {
@@ -19,7 +19,7 @@ public final class RpcClientCall<Q, R> {
         this.dispatcher = dispatcher;
     }
 
-    public RpcClientMethod<Q, R> method() {
+    public RpcMethodContract<Q, R> method() {
         return this.method;
     }
 

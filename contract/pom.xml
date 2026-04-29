@@ -9,32 +9,19 @@
         <version>0.0.1</version>
     </parent>
 
-    <artifactId>client</artifactId>
+    <artifactId>contract</artifactId>
     <packaging>jar</packaging>
 
     <dependencies>
-        <dependency>
-            <groupId>ru.pathcreator.pyc</groupId>
-            <artifactId>contract</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>ru.pathcreator.pyc</groupId>
-            <artifactId>core</artifactId>
-        </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
             <scope>test</scope>
         </dependency>
-        <dependency>
-            <groupId>ru.pathcreator.pyc</groupId>
-            <artifactId>server</artifactId>
-            <scope>test</scope>
-        </dependency>
     </dependencies>
 
     <build>
-        <finalName>client</finalName>
+        <finalName>contract</finalName>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -43,9 +30,6 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
-                <configuration>
-                    <argLine>--add-exports java.base/jdk.internal.misc=ALL-UNNAMED</argLine>
-                </configuration>
             </plugin>
         </plugins>
     </build>

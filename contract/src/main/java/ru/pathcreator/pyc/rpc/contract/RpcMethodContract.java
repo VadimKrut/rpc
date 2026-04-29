@@ -1,6 +1,6 @@
-package ru.pathcreator.pyc.rpc.server.handler;
+package ru.pathcreator.pyc.rpc.contract;
 
-public record RpcServerMethod<Q, R>(
+public record RpcMethodContract<Q, R>(
         String name,
         Class<Q> requestType,
         Class<R> responseType,
@@ -8,7 +8,7 @@ public record RpcServerMethod<Q, R>(
         int responseMessageTypeId
 ) {
 
-    public RpcServerMethod {
+    public RpcMethodContract {
         if (name == null || name.isBlank()) {
             throw new IllegalArgumentException("name must not be blank");
         }
@@ -26,14 +26,14 @@ public record RpcServerMethod<Q, R>(
         }
     }
 
-    public static <Q, R> RpcServerMethod<Q, R> of(
+    public static <Q, R> RpcMethodContract<Q, R> of(
             final String name,
             final Class<Q> requestType,
             final Class<R> responseType,
             final int requestMessageTypeId,
             final int responseMessageTypeId
     ) {
-        return new RpcServerMethod<>(
+        return new RpcMethodContract<>(
                 name,
                 requestType,
                 responseType,

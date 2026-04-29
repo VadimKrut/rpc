@@ -5,8 +5,9 @@ import org.junit.jupiter.api.Test;
 import ru.pathcreator.pyc.rpc.client.call.RpcClientCall;
 import ru.pathcreator.pyc.rpc.client.fixture.ClientEchoRequest;
 import ru.pathcreator.pyc.rpc.client.fixture.ClientEchoResponse;
-import ru.pathcreator.pyc.rpc.client.method.RpcClientMethod;
 import ru.pathcreator.pyc.rpc.client.response.RpcClientResult;
+import ru.pathcreator.pyc.rpc.contract.RpcMethodContract;
+import ru.pathcreator.pyc.rpc.contract.RpcServiceContract;
 import ru.pathcreator.pyc.rpc.core.RpcChannel;
 import ru.pathcreator.pyc.rpc.core.RpcRuntime;
 import ru.pathcreator.pyc.rpc.core.codex.RpcEnvelope;
@@ -16,11 +17,10 @@ import ru.pathcreator.pyc.rpc.core.exception.RpcCallTimeoutException;
 import ru.pathcreator.pyc.rpc.core.exception.RpcRemoteException;
 import ru.pathcreator.pyc.rpc.server.RpcServer;
 import ru.pathcreator.pyc.rpc.server.error.RpcStatusException;
-import ru.pathcreator.pyc.rpc.server.handler.RpcServerMethod;
 
-import java.util.Locale;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -39,14 +39,22 @@ final class RpcClientTest {
     void shouldSendTypedRequestAndReceiveTypedResponse() {
         try (ChannelPair pair = openChannels()) {
             final RpcServer server = RpcServer.builder(pair.serverChannel()).build();
-            final RpcServerMethod<ClientEchoRequest, ClientEchoResponse> serverMethod = RpcServerMethod.of(
+            final RpcServiceContract service = RpcServiceContract.of(
+                    "client-service",
+                    RpcMethodContract.of(
+                            "client.echo",
+                            ClientEchoRequest.class,
+                            ClientEchoResponse.class,
+                            REQUEST_MESSAGE_TYPE_ID,
+                            RESPONSE_MESSAGE_TYPE_ID
+                    )
+            );
+            final RpcMethodContract<ClientEchoRequest, ClientEchoResponse> method = service.requireMethod(
                     "client.echo",
                     ClientEchoRequest.class,
-                    ClientEchoResponse.class,
-                    REQUEST_MESSAGE_TYPE_ID,
-                    RESPONSE_MESSAGE_TYPE_ID
+                    ClientEchoResponse.class
             );
-            server.register(serverMethod, request -> new ClientEchoResponse(
+            server.register(method, request -> new ClientEchoResponse(
                     request.requestId(),
                     request.message().toUpperCase(Locale.ROOT),
                     request.amount() + 10
@@ -55,13 +63,6 @@ final class RpcClientTest {
             final RpcClient client = RpcClient.builder(pair.clientChannel())
                     .defaultTimeoutNs(DEFAULT_TIMEOUT_NS)
                     .build();
-            final RpcClientMethod<ClientEchoRequest, ClientEchoResponse> method = RpcClientMethod.of(
-                    "client.echo",
-                    ClientEchoRequest.class,
-                    ClientEchoResponse.class,
-                    REQUEST_MESSAGE_TYPE_ID,
-                    RESPONSE_MESSAGE_TYPE_ID
-            );
 
             final ClientEchoRequest request = new ClientEchoRequest(UUID.randomUUID(), "hello", 7);
             final ClientEchoResponse response = client.send(method, request);
@@ -73,14 +74,14 @@ final class RpcClientTest {
     void shouldSupportBoundCallAndClientContext() {
         try (ChannelPair pair = openChannels()) {
             final RpcServer server = RpcServer.builder(pair.serverChannel()).build();
-            final RpcServerMethod<ClientEchoRequest, ClientEchoResponse> serverMethod = RpcServerMethod.of(
+            final RpcMethodContract<ClientEchoRequest, ClientEchoResponse> method = RpcMethodContract.of(
                     "client.bound",
                     ClientEchoRequest.class,
                     ClientEchoResponse.class,
                     REQUEST_MESSAGE_TYPE_ID,
                     RESPONSE_MESSAGE_TYPE_ID
             );
-            server.register(serverMethod, request -> new ClientEchoResponse(
+            server.register(method, request -> new ClientEchoResponse(
                     request.requestId(),
                     request.message().toUpperCase(Locale.ROOT),
                     request.amount()
@@ -93,13 +94,6 @@ final class RpcClientTest {
                         return invocation.proceed(context, request);
                     })
                     .build();
-            final RpcClientMethod<ClientEchoRequest, ClientEchoResponse> method = RpcClientMethod.of(
-                    "client.bound",
-                    ClientEchoRequest.class,
-                    ClientEchoResponse.class,
-                    REQUEST_MESSAGE_TYPE_ID,
-                    RESPONSE_MESSAGE_TYPE_ID
-            );
             final RpcClientCall<ClientEchoRequest, ClientEchoResponse> call = client.bind(method);
 
             final ClientEchoResponse response = call.send(
@@ -115,25 +109,18 @@ final class RpcClientTest {
     void shouldExposeRemoteErrorAsStructuredClientResult() {
         try (ChannelPair pair = openChannels()) {
             final RpcServer server = RpcServer.builder(pair.serverChannel()).build();
-            final RpcServerMethod<ClientEchoRequest, ClientEchoResponse> serverMethod = RpcServerMethod.of(
+            final RpcMethodContract<ClientEchoRequest, ClientEchoResponse> method = RpcMethodContract.of(
                     "client.bad-request",
                     ClientEchoRequest.class,
                     ClientEchoResponse.class,
                     REQUEST_MESSAGE_TYPE_ID,
                     RESPONSE_MESSAGE_TYPE_ID
             );
-            server.register(serverMethod, request -> {
+            server.register(method, request -> {
                 throw new RpcStatusException(RpcStatusCodes.BAD_REQUEST, "message must not be blank");
             });
 
             final RpcClient client = RpcClient.builder(pair.clientChannel()).build();
-            final RpcClientMethod<ClientEchoRequest, ClientEchoResponse> method = RpcClientMethod.of(
-                    "client.bad-request",
-                    ClientEchoRequest.class,
-                    ClientEchoResponse.class,
-                    REQUEST_MESSAGE_TYPE_ID,
-                    RESPONSE_MESSAGE_TYPE_ID
-            );
 
             final RpcClientResult<ClientEchoResponse> result = client.exchange(
                     method,
@@ -153,25 +140,18 @@ final class RpcClientTest {
     void shouldThrowRpcRemoteExceptionOnConvenienceSend() {
         try (ChannelPair pair = openChannels()) {
             final RpcServer server = RpcServer.builder(pair.serverChannel()).build();
-            final RpcServerMethod<ClientEchoRequest, ClientEchoResponse> serverMethod = RpcServerMethod.of(
+            final RpcMethodContract<ClientEchoRequest, ClientEchoResponse> method = RpcMethodContract.of(
                     "client.method-not-allowed",
                     ClientEchoRequest.class,
                     ClientEchoResponse.class,
                     REQUEST_MESSAGE_TYPE_ID,
                     RESPONSE_MESSAGE_TYPE_ID
             );
-            server.register(serverMethod, request -> {
+            server.register(method, request -> {
                 throw new RpcStatusException(RpcStatusCodes.METHOD_NOT_ALLOWED, "method not allowed");
             });
 
             final RpcClient client = RpcClient.builder(pair.clientChannel()).build();
-            final RpcClientMethod<ClientEchoRequest, ClientEchoResponse> method = RpcClientMethod.of(
-                    "client.method-not-allowed",
-                    ClientEchoRequest.class,
-                    ClientEchoResponse.class,
-                    REQUEST_MESSAGE_TYPE_ID,
-                    RESPONSE_MESSAGE_TYPE_ID
-            );
 
             final RpcRemoteException error = assertThrows(
                     RpcRemoteException.class,
@@ -202,7 +182,7 @@ final class RpcClientTest {
                         return invocation.proceed(context, request);
                     })
                     .build();
-            final RpcClientMethod<ClientEchoRequest, ClientEchoResponse> method = RpcClientMethod.of(
+            final RpcMethodContract<ClientEchoRequest, ClientEchoResponse> method = RpcMethodContract.of(
                     "client.validated",
                     ClientEchoRequest.class,
                     ClientEchoResponse.class,
@@ -223,14 +203,14 @@ final class RpcClientTest {
     void shouldValidateResponseAfterExchange() {
         try (ChannelPair pair = openChannels()) {
             final RpcServer server = RpcServer.builder(pair.serverChannel()).build();
-            final RpcServerMethod<ClientEchoRequest, ClientEchoResponse> serverMethod = RpcServerMethod.of(
+            final RpcMethodContract<ClientEchoRequest, ClientEchoResponse> method = RpcMethodContract.of(
                     "client.response-validated",
                     ClientEchoRequest.class,
                     ClientEchoResponse.class,
                     REQUEST_MESSAGE_TYPE_ID,
                     RESPONSE_MESSAGE_TYPE_ID
             );
-            server.register(serverMethod, request -> new ClientEchoResponse(
+            server.register(method, request -> new ClientEchoResponse(
                     request.requestId(),
                     request.message(),
                     -1
@@ -244,13 +224,6 @@ final class RpcClientTest {
                         }
                     })
                     .build();
-            final RpcClientMethod<ClientEchoRequest, ClientEchoResponse> method = RpcClientMethod.of(
-                    "client.response-validated",
-                    ClientEchoRequest.class,
-                    ClientEchoResponse.class,
-                    REQUEST_MESSAGE_TYPE_ID,
-                    RESPONSE_MESSAGE_TYPE_ID
-            );
 
             final IllegalStateException error = assertThrows(
                     IllegalStateException.class,
@@ -264,14 +237,14 @@ final class RpcClientTest {
     void shouldApplyInterceptorsAroundTransportInOrder() {
         try (ChannelPair pair = openChannels()) {
             final RpcServer server = RpcServer.builder(pair.serverChannel()).build();
-            final RpcServerMethod<ClientEchoRequest, ClientEchoResponse> serverMethod = RpcServerMethod.of(
+            final RpcMethodContract<ClientEchoRequest, ClientEchoResponse> method = RpcMethodContract.of(
                     "client.intercepted",
                     ClientEchoRequest.class,
                     ClientEchoResponse.class,
                     REQUEST_MESSAGE_TYPE_ID,
                     RESPONSE_MESSAGE_TYPE_ID
             );
-            server.register(serverMethod, request -> new ClientEchoResponse(
+            server.register(method, request -> new ClientEchoResponse(
                     request.requestId(),
                     request.message().toUpperCase(Locale.ROOT),
                     request.amount()
@@ -292,13 +265,6 @@ final class RpcClientTest {
                         return result;
                     })
                     .build();
-            final RpcClientMethod<ClientEchoRequest, ClientEchoResponse> method = RpcClientMethod.of(
-                    "client.intercepted",
-                    ClientEchoRequest.class,
-                    ClientEchoResponse.class,
-                    REQUEST_MESSAGE_TYPE_ID,
-                    RESPONSE_MESSAGE_TYPE_ID
-            );
 
             final ClientEchoResponse response = client.send(
                     method,
@@ -321,7 +287,7 @@ final class RpcClientTest {
             final RpcClient client = RpcClient.builder(pair.clientChannel())
                     .defaultTimeoutNs(10_000_000L)
                     .build();
-            final RpcClientMethod<ClientEchoRequest, ClientEchoResponse> method = RpcClientMethod.of(
+            final RpcMethodContract<ClientEchoRequest, ClientEchoResponse> method = RpcMethodContract.of(
                     "client.timeout",
                     ClientEchoRequest.class,
                     ClientEchoResponse.class,
@@ -346,7 +312,7 @@ final class RpcClientTest {
             });
 
             final RpcClient client = RpcClient.builder(pair.clientChannel()).build();
-            final RpcClientMethod<ClientEchoRequest, ClientEchoResponse> method = RpcClientMethod.of(
+            final RpcMethodContract<ClientEchoRequest, ClientEchoResponse> method = RpcMethodContract.of(
                     "client.unexpected-type",
                     ClientEchoRequest.class,
                     ClientEchoResponse.class,
@@ -359,6 +325,37 @@ final class RpcClientTest {
                     () -> client.exchange(method, new ClientEchoRequest(UUID.randomUUID(), "x", 1))
             );
             assertTrue(error.getMessage().contains("unexpected responseMessageTypeId"));
+        }
+    }
+
+    @Test
+    void shouldRejectConflictingContractForSameRequestMessageTypeId() {
+        try (ChannelPair pair = openChannels()) {
+            final RpcClient client = RpcClient.builder(pair.clientChannel()).build();
+            final RpcMethodContract<ClientEchoRequest, ClientEchoResponse> first = RpcMethodContract.of(
+                    "client.first",
+                    ClientEchoRequest.class,
+                    ClientEchoResponse.class,
+                    REQUEST_MESSAGE_TYPE_ID,
+                    RESPONSE_MESSAGE_TYPE_ID
+            );
+            final RpcMethodContract<ClientEchoRequest, ClientEchoResponse> conflicting = RpcMethodContract.of(
+                    "client.conflicting",
+                    ClientEchoRequest.class,
+                    ClientEchoResponse.class,
+                    REQUEST_MESSAGE_TYPE_ID,
+                    RESPONSE_MESSAGE_TYPE_ID + 1
+            );
+
+            client.bind(first);
+            final IllegalStateException error = assertThrows(
+                    IllegalStateException.class,
+                    () -> client.bind(conflicting)
+            );
+            assertEquals(
+                    "requestMessageTypeId 701 is already bound to contract 'client.first', cannot reuse it for 'client.conflicting'",
+                    error.getMessage()
+            );
         }
     }
 

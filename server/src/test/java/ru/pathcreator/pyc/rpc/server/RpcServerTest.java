@@ -2,16 +2,18 @@ package ru.pathcreator.pyc.rpc.server;
 
 import org.agrona.concurrent.UnsafeBuffer;
 import org.junit.jupiter.api.Test;
+import ru.pathcreator.pyc.rpc.contract.RpcMethodContract;
 import ru.pathcreator.pyc.rpc.core.RpcChannel;
 import ru.pathcreator.pyc.rpc.core.RpcRuntime;
 import ru.pathcreator.pyc.rpc.core.codex.RpcEnvelope;
+import ru.pathcreator.pyc.rpc.core.codex.RpcResponseFrame;
 import ru.pathcreator.pyc.rpc.core.codex.RpcStatusCodes;
 import ru.pathcreator.pyc.rpc.core.config.RpcChannelConfig;
+import ru.pathcreator.pyc.rpc.core.serialization.RpcCodecSupport;
 import ru.pathcreator.pyc.rpc.server.error.RpcServerErrorResponse;
 import ru.pathcreator.pyc.rpc.server.error.RpcStatusException;
 import ru.pathcreator.pyc.rpc.server.fixture.ServerEchoRequest;
 import ru.pathcreator.pyc.rpc.server.fixture.ServerEchoResponse;
-import ru.pathcreator.pyc.rpc.server.handler.RpcServerMethod;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -34,7 +36,7 @@ final class RpcServerTest {
     void shouldServeTypedRequestAndResponse() {
         try (ChannelPair pair = openChannels()) {
             final RpcServer server = RpcServer.builder(pair.serverChannel()).build();
-            final RpcServerMethod<ServerEchoRequest, ServerEchoResponse> method = RpcServerMethod.of(
+            final RpcMethodContract<ServerEchoRequest, ServerEchoResponse> method = RpcMethodContract.of(
                     "echo.uppercase",
                     ServerEchoRequest.class,
                     ServerEchoResponse.class,
@@ -52,13 +54,7 @@ final class RpcServerTest {
                     "hello",
                     21
             );
-            final ServerEchoResponse response = pair.clientChannel().send(
-                    request,
-                    TIMEOUT_NS,
-                    ServerEchoResponse.class,
-                    REQUEST_MESSAGE_TYPE_ID,
-                    RESPONSE_MESSAGE_TYPE_ID
-            );
+            final ServerEchoResponse response = pair.exchange(method, request);
             assertEquals(
                     new ServerEchoResponse(request.requestId(), "HELLO", 42),
                     response
@@ -70,7 +66,7 @@ final class RpcServerTest {
     void shouldExposeRequestContextToContextAwareHandler() {
         try (ChannelPair pair = openChannels()) {
             final RpcServer server = RpcServer.builder(pair.serverChannel()).build();
-            final RpcServerMethod<ServerEchoRequest, ServerEchoResponse> method = RpcServerMethod.of(
+            final RpcMethodContract<ServerEchoRequest, ServerEchoResponse> method = RpcMethodContract.of(
                     "echo.context",
                     ServerEchoRequest.class,
                     ServerEchoResponse.class,
@@ -88,13 +84,7 @@ final class RpcServerTest {
             });
 
             final ServerEchoRequest request = new ServerEchoRequest(UUID.randomUUID(), "ctx", 7);
-            final ServerEchoResponse response = pair.clientChannel().send(
-                    request,
-                    TIMEOUT_NS,
-                    ServerEchoResponse.class,
-                    REQUEST_MESSAGE_TYPE_ID,
-                    RESPONSE_MESSAGE_TYPE_ID
-            );
+            final ServerEchoResponse response = pair.exchange(method, request);
             assertEquals("echo.context", response.message());
             assertTrue(seenCorrelationId.get() > 0L);
             assertEquals(RESPONSE_MESSAGE_TYPE_ID, seenResponseTypeId.get());
@@ -111,7 +101,7 @@ final class RpcServerTest {
                             method.name() + ": " + error.getMessage()
                     ))
                     .build();
-            final RpcServerMethod<ServerEchoRequest, ServerEchoResponse> method = RpcServerMethod.of(
+            final RpcMethodContract<ServerEchoRequest, ServerEchoResponse> method = RpcMethodContract.of(
                     "echo.failure",
                     ServerEchoRequest.class,
                     ServerEchoResponse.class,
@@ -122,14 +112,8 @@ final class RpcServerTest {
                 throw new IllegalArgumentException("boom for " + request.message());
             });
 
-            final UnsafeBuffer requestBuffer = pair.encodeRequest(new ServerEchoRequest(UUID.randomUUID(), "fail", 1));
-            final UnsafeBuffer response = pair.clientChannel().sendRaw(
-                    TIMEOUT_NS,
-                    requestBuffer.capacity() - RpcEnvelope.HEADER_LENGTH,
-                    REQUEST_MESSAGE_TYPE_ID,
-                    requestBuffer
-            );
-            assertEquals(RpcStatusCodes.BAD_GATEWAY, RpcEnvelope.statusCode(0, response));
+            final RpcResponseFrame response = pair.exchangeFrame(method, new ServerEchoRequest(UUID.randomUUID(), "fail", 1));
+            assertEquals(RpcStatusCodes.BAD_GATEWAY, response.statusCode());
             assertEquals("echo.failure: boom for fail", readPayloadText(response));
         }
     }
@@ -138,7 +122,7 @@ final class RpcServerTest {
     void shouldAllowHandlerToThrowExplicitStatus() {
         try (ChannelPair pair = openChannels()) {
             final RpcServer server = RpcServer.builder(pair.serverChannel()).build();
-            final RpcServerMethod<ServerEchoRequest, ServerEchoResponse> method = RpcServerMethod.of(
+            final RpcMethodContract<ServerEchoRequest, ServerEchoResponse> method = RpcMethodContract.of(
                     "echo.bad-request",
                     ServerEchoRequest.class,
                     ServerEchoResponse.class,
@@ -149,14 +133,8 @@ final class RpcServerTest {
                 throw new RpcStatusException(RpcStatusCodes.BAD_REQUEST, "message must not be blank");
             });
 
-            final UnsafeBuffer requestBuffer = pair.encodeRequest(new ServerEchoRequest(UUID.randomUUID(), "", 1));
-            final UnsafeBuffer response = pair.clientChannel().sendRaw(
-                    TIMEOUT_NS,
-                    requestBuffer.capacity() - RpcEnvelope.HEADER_LENGTH,
-                    REQUEST_MESSAGE_TYPE_ID,
-                    requestBuffer
-            );
-            assertEquals(RpcStatusCodes.BAD_REQUEST, RpcEnvelope.statusCode(0, response));
+            final RpcResponseFrame response = pair.exchangeFrame(method, new ServerEchoRequest(UUID.randomUUID(), "", 1));
+            assertEquals(RpcStatusCodes.BAD_REQUEST, response.statusCode());
             assertEquals("message must not be blank", readPayloadText(response));
         }
     }
@@ -176,7 +154,7 @@ final class RpcServerTest {
                         }
                     })
                     .build();
-            final RpcServerMethod<ServerEchoRequest, ServerEchoResponse> method = RpcServerMethod.of(
+            final RpcMethodContract<ServerEchoRequest, ServerEchoResponse> method = RpcMethodContract.of(
                     "echo.validated",
                     ServerEchoRequest.class,
                     ServerEchoResponse.class,
@@ -188,14 +166,8 @@ final class RpcServerTest {
                 return new ServerEchoResponse(request.requestId(), request.message(), request.amount());
             });
 
-            final UnsafeBuffer requestBuffer = pair.encodeRequest(new ServerEchoRequest(UUID.randomUUID(), "", 1));
-            final UnsafeBuffer response = pair.clientChannel().sendRaw(
-                    TIMEOUT_NS,
-                    requestBuffer.capacity() - RpcEnvelope.HEADER_LENGTH,
-                    REQUEST_MESSAGE_TYPE_ID,
-                    requestBuffer
-            );
-            assertEquals(RpcStatusCodes.BAD_REQUEST, RpcEnvelope.statusCode(0, response));
+            final RpcResponseFrame response = pair.exchangeFrame(method, new ServerEchoRequest(UUID.randomUUID(), "", 1));
+            assertEquals(RpcStatusCodes.BAD_REQUEST, response.statusCode());
             assertEquals("echo.validated: message must not be blank", readPayloadText(response));
             assertEquals(0, handlerCalls.get());
         }
@@ -219,7 +191,7 @@ final class RpcServerTest {
                         return response;
                     })
                     .build();
-            final RpcServerMethod<ServerEchoRequest, ServerEchoResponse> method = RpcServerMethod.of(
+            final RpcMethodContract<ServerEchoRequest, ServerEchoResponse> method = RpcMethodContract.of(
                     "echo.intercepted",
                     ServerEchoRequest.class,
                     ServerEchoResponse.class,
@@ -231,12 +203,9 @@ final class RpcServerTest {
                 return new ServerEchoResponse(request.requestId(), request.message().toUpperCase(Locale.ROOT), request.amount());
             });
 
-            final ServerEchoResponse response = pair.clientChannel().send(
-                    new ServerEchoRequest(UUID.randomUUID(), "hello", 1),
-                    TIMEOUT_NS,
-                    ServerEchoResponse.class,
-                    REQUEST_MESSAGE_TYPE_ID,
-                    RESPONSE_MESSAGE_TYPE_ID
+            final ServerEchoResponse response = pair.exchange(
+                    method,
+                    new ServerEchoRequest(UUID.randomUUID(), "hello", 1)
             );
 
             assertEquals("HELLO", response.message());
@@ -251,7 +220,7 @@ final class RpcServerTest {
     void shouldRejectDuplicateRequestMessageTypeRegistration() {
         try (ChannelPair pair = openChannels()) {
             final RpcServer server = RpcServer.builder(pair.serverChannel()).build();
-            final RpcServerMethod<ServerEchoRequest, ServerEchoResponse> method = RpcServerMethod.of(
+            final RpcMethodContract<ServerEchoRequest, ServerEchoResponse> method = RpcMethodContract.of(
                     "echo.duplicate",
                     ServerEchoRequest.class,
                     ServerEchoResponse.class,
@@ -276,7 +245,7 @@ final class RpcServerTest {
     void shouldReleaseRequestMessageTypeReservationWhenRegistrationFails() {
         try (ChannelPair pair = openChannels()) {
             final RpcServer server = RpcServer.builder(pair.serverChannel()).build();
-            final RpcServerMethod<Object, ServerEchoResponse> brokenMethod = RpcServerMethod.of(
+            final RpcMethodContract<Object, ServerEchoResponse> brokenMethod = RpcMethodContract.of(
                     "echo.broken",
                     Object.class,
                     ServerEchoResponse.class,
@@ -291,7 +260,7 @@ final class RpcServerTest {
                     )
             );
 
-            final RpcServerMethod<ServerEchoRequest, ServerEchoResponse> validMethod = RpcServerMethod.of(
+            final RpcMethodContract<ServerEchoRequest, ServerEchoResponse> validMethod = RpcMethodContract.of(
                     "echo.recovered",
                     ServerEchoRequest.class,
                     ServerEchoResponse.class,
@@ -328,10 +297,9 @@ final class RpcServerTest {
         return new ChannelPair(runtime, clientChannel, serverChannel);
     }
 
-    private static String readPayloadText(final UnsafeBuffer response) {
-        final int payloadLength = RpcEnvelope.payloadLength(0, response);
-        final byte[] bytes = new byte[payloadLength];
-        response.getBytes(RpcEnvelope.HEADER_LENGTH, bytes);
+    private static String readPayloadText(final RpcResponseFrame response) {
+        final byte[] bytes = new byte[response.payloadLength()];
+        response.buffer().getBytes(response.payloadOffset(), bytes);
         return new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
     }
 
@@ -340,6 +308,34 @@ final class RpcServerTest {
             RpcChannel clientChannel,
             RpcChannel serverChannel
     ) implements AutoCloseable {
+
+        private RpcResponseFrame exchangeFrame(
+                final RpcMethodContract<ServerEchoRequest, ServerEchoResponse> method,
+                final ServerEchoRequest request
+        ) {
+            final UnsafeBuffer requestBuffer = this.encodeRequest(request);
+            return this.clientChannel.sendFrame(
+                    TIMEOUT_NS,
+                    requestBuffer.capacity() - RpcEnvelope.HEADER_LENGTH,
+                    method.requestMessageTypeId(),
+                    requestBuffer
+            );
+        }
+
+        private ServerEchoResponse exchange(
+                final RpcMethodContract<ServerEchoRequest, ServerEchoResponse> method,
+                final ServerEchoRequest request
+        ) {
+            final RpcResponseFrame frame = this.exchangeFrame(method, request);
+            assertEquals(RpcStatusCodes.OK, frame.statusCode());
+            assertEquals(method.responseMessageTypeId(), frame.messageTypeId());
+            return RpcCodecSupport.decode(
+                    frame.payloadOffset(),
+                    frame.payloadLength(),
+                    ServerEchoResponse.class,
+                    frame.buffer()
+            );
+        }
 
         private UnsafeBuffer encodeRequest(final ServerEchoRequest request) {
             return ru.pathcreator.pyc.rpc.core.serialization.RpcCodecSupport.encode(

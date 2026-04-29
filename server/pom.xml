@@ -15,6 +15,10 @@
     <dependencies>
         <dependency>
             <groupId>ru.pathcreator.pyc</groupId>
+            <artifactId>contract</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>ru.pathcreator.pyc</groupId>
             <artifactId>core</artifactId>
         </dependency>
         <dependency>

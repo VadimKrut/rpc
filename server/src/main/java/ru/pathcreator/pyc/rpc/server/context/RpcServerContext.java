@@ -1,9 +1,9 @@
 package ru.pathcreator.pyc.rpc.server.context;
 
-import ru.pathcreator.pyc.rpc.server.handler.RpcServerMethod;
+import ru.pathcreator.pyc.rpc.contract.RpcMethodContract;
 
 public record RpcServerContext(
-        RpcServerMethod<?, ?> method,
+        RpcMethodContract<?, ?> method,
         long correlationId,
         int requestMessageTypeId,
         int responseMessageTypeId,

@@ -32,6 +32,11 @@
             </dependency>
             <dependency>
                 <groupId>ru.pathcreator.pyc</groupId>
+                <artifactId>contract</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>ru.pathcreator.pyc</groupId>
                 <artifactId>core</artifactId>
                 <version>${project.version}</version>
             </dependency>
@@ -105,6 +110,7 @@
 
     <modules>
         <module>codec</module>
+        <module>contract</module>
         <module>core</module>
         <module>client</module>
         <module>server</module>
