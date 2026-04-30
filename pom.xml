@@ -16,6 +16,7 @@
         <sbe.tool.version>1.36.0</sbe.tool.version>
         <asm.version>9.8</asm.version>
         <junit.jupiter.version>5.12.2</junit.jupiter.version>
+        <spring.boot.version>4.0.6</spring.boot.version>
         <maven.plugin.api.version>3.9.9</maven.plugin.api.version>
         <maven.plugin.tools.version>3.15.1</maven.plugin.tools.version>
         <maven.compiler.plugin.version>3.14.1</maven.compiler.plugin.version>
@@ -64,6 +65,23 @@
                 <groupId>ru.pathcreator.pyc</groupId>
                 <artifactId>bootstrap</artifactId>
                 <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>ru.pathcreator.pyc</groupId>
+                <artifactId>spring</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>ru.pathcreator.pyc</groupId>
+                <artifactId>spring-boot-starter</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-dependencies</artifactId>
+                <version>${spring.boot.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
             </dependency>
             <dependency>
                 <groupId>io.aeron</groupId>
@@ -132,6 +150,8 @@
         <module>observability</module>
         <module>server</module>
         <module>bootstrap</module>
+        <module>spring</module>
+        <module>spring-boot-starter</module>
         <module>serialization</module>
     </modules>
 
