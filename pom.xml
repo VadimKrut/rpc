@@ -61,6 +61,11 @@
                 <version>${project.version}</version>
             </dependency>
             <dependency>
+                <groupId>ru.pathcreator.pyc</groupId>
+                <artifactId>bootstrap</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
                 <groupId>io.aeron</groupId>
                 <artifactId>aeron-all</artifactId>
                 <version>${aeron.version}</version>
@@ -126,6 +131,7 @@
         <module>client</module>
         <module>observability</module>
         <module>server</module>
+        <module>bootstrap</module>
         <module>serialization</module>
     </modules>
 

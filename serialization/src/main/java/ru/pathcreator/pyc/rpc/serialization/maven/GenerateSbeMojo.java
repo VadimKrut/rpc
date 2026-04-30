@@ -28,7 +28,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -39,6 +41,8 @@ import java.util.stream.Stream;
         requiresDependencyResolution = ResolutionScope.COMPILE_PLUS_RUNTIME
 )
 public final class GenerateSbeMojo extends AbstractMojo {
+
+    private static final String BOOTSTRAP_TYPES_DIRECTORY = "META-INF/rpc-bootstrap/dto-types";
 
     @Parameter(defaultValue = "${project}", readonly = true, required = true)
     private MavenProject project;
@@ -98,7 +102,7 @@ public final class GenerateSbeMojo extends AbstractMojo {
         for (final String element : project.getCompileClasspathElements()) {
             urls.add(new File(element).toURI().toURL());
         }
-        final List<Class<?>> annotated = new ArrayList<>();
+        final Set<Class<?>> annotated = new LinkedHashSet<>();
         try (final URLClassLoader classLoader = new URLClassLoader(urls.toArray(URL[]::new), Thread.currentThread().getContextClassLoader())) {
             for (final Path classFile : classFiles) {
                 final String className = toClassName(classFile);
@@ -107,8 +111,33 @@ public final class GenerateSbeMojo extends AbstractMojo {
                     annotated.add(type);
                 }
             }
+            annotated.addAll(discoverBootstrapTypes(classLoader));
         }
-        return annotated;
+        return new ArrayList<>(annotated);
+    }
+
+    private List<Class<?>> discoverBootstrapTypes(
+            final ClassLoader classLoader
+    ) throws IOException, ClassNotFoundException {
+        final Path bootstrapDirectory = classesDirectory.toPath().resolve(BOOTSTRAP_TYPES_DIRECTORY);
+        if (!Files.exists(bootstrapDirectory)) {
+            return List.of();
+        }
+        final List<Class<?>> discovered = new ArrayList<>();
+        try (final Stream<Path> stream = Files.walk(bootstrapDirectory)) {
+            final List<Path> metadataFiles = stream
+                    .filter(Files::isRegularFile)
+                    .collect(Collectors.toList());
+            for (final Path metadataFile : metadataFiles) {
+                for (final String line : Files.readAllLines(metadataFile, StandardCharsets.UTF_8)) {
+                    final String className = line.trim();
+                    if (!className.isEmpty() && !className.startsWith("#")) {
+                        discovered.add(classLoader.loadClass(className));
+                    }
+                }
+            }
+        }
+        return discovered;
     }
 
     private String toClassName(final Path classFile) {
