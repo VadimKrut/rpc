@@ -1,0 +1,14 @@
+.idea/
+target/
+*.iml
+*.ipr
+*.iws
+
+.mvn/timing.properties
+
+*.log
+*.tmp
+*.bak
+
+hs_err_pid*
+replay_pid*
