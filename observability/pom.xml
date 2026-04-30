@@ -6,11 +6,13 @@
     <parent>
         <groupId>ru.pathcreator.pyc</groupId>
         <artifactId>rpc</artifactId>
-        <version>0.0.1</version>
+        <version>${revision}</version>
     </parent>
 
     <artifactId>observability</artifactId>
     <packaging>jar</packaging>
+    <name>rpc-observability</name>
+    <description>Optional low-overhead metrics listeners and snapshots for RPC client and server flows.</description>
 
     <dependencies>
         <dependency>

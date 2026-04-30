@@ -6,11 +6,14 @@
     <parent>
         <groupId>ru.pathcreator.pyc</groupId>
         <artifactId>rpc</artifactId>
-        <version>0.0.1</version>
+        <version>${revision}</version>
     </parent>
 
     <artifactId>bootstrap</artifactId>
     <packaging>jar</packaging>
+    <name>rpc-bootstrap</name>
+    <description>Convenience bootstrap layer that binds contracts, channels, clients, servers, encryption and metrics together.
+    </description>
 
     <dependencies>
         <dependency>

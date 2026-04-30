@@ -6,11 +6,13 @@
     <parent>
         <groupId>ru.pathcreator.pyc</groupId>
         <artifactId>rpc</artifactId>
-        <version>0.0.1</version>
+        <version>${revision}</version>
     </parent>
 
     <artifactId>serialization</artifactId>
     <packaging>maven-plugin</packaging>
+    <name>rpc-serialization</name>
+    <description>Maven plugin that discovers DTO metadata and generates SBE-based serialization adapters.</description>
 
     <dependencies>
         <dependency>

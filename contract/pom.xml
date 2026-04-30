@@ -6,11 +6,13 @@
     <parent>
         <groupId>ru.pathcreator.pyc</groupId>
         <artifactId>rpc</artifactId>
-        <version>0.0.1</version>
+        <version>${revision}</version>
     </parent>
 
     <artifactId>contract</artifactId>
     <packaging>jar</packaging>
+    <name>rpc-contract</name>
+    <description>Contract-first metadata model for RPC methods and services.</description>
 
     <dependencies>
         <dependency>

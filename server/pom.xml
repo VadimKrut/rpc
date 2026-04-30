@@ -6,11 +6,14 @@
     <parent>
         <groupId>ru.pathcreator.pyc</groupId>
         <artifactId>rpc</artifactId>
-        <version>0.0.1</version>
+        <version>${revision}</version>
     </parent>
 
     <artifactId>server</artifactId>
     <packaging>jar</packaging>
+    <name>rpc-server</name>
+    <description>Typed server-side RPC dispatch layer with validation, interception and status-aware error handling.
+    </description>
 
     <dependencies>
         <dependency>
