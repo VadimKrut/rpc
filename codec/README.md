@@ -14,7 +14,7 @@
 <dependency>
     <groupId>ru.pathcreator.pyc</groupId>
     <artifactId>codec</artifactId>
-    <version>0.0.2-SNAPSHOT</version>
+    <version>0.0.3-SNAPSHOT</version>
 </dependency>
 ```
 

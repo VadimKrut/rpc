@@ -16,6 +16,6 @@
 <dependency>
     <groupId>ru.pathcreator.pyc</groupId>
     <artifactId>spring</artifactId>
-    <version>0.0.2-SNAPSHOT</version>
+    <version>0.0.3-SNAPSHOT</version>
 </dependency>
 ```

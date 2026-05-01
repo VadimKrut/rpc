@@ -5,6 +5,7 @@ target/
 *.iws
 
 .mvn/timing.properties
+.flattened-pom.xml
 
 *.log
 *.tmp

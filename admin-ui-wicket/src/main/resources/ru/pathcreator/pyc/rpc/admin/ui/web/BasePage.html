@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html xmlns:wicket="http://wicket.apache.org">
+<body>
+<div class="shell">
+    <aside class="sidebar">
+        <div class="brand">
+            <div class="brand-mark">rpc</div>
+            <div>
+                <div class="brand-title" wicket:id="applicationName">RPC Admin Console</div>
+                <div class="brand-subtitle">Операторская консоль</div>
+            </div>
+        </div>
+        <nav class="nav">
+            <a wicket:id="overviewLink" class="nav-link">Операционный обзор</a>
+            <a wicket:id="channelsLink" class="nav-link">Каналы и связность</a>
+            <a wicket:id="methodsLink" class="nav-link">Сервисы и методы</a>
+        </nav>
+        <div class="sidebar-footnote">
+            Независимый UI-модуль над <code>rpc-admin</code> без Spring и без выделенного REST API.
+        </div>
+    </aside>
+    <main class="main">
+        <header class="topbar">
+            <div>
+                <h1 class="page-title" wicket:id="pageTitle">Операционный обзор</h1>
+                <p class="page-description" wicket:id="pageDescription">Описание экрана</p>
+            </div>
+            <div class="topbar-actions">
+                <a wicket:id="refresh" class="secondary-action">Обновить</a>
+                <a wicket:id="logout" class="primary-action">Выйти</a>
+            </div>
+        </header>
+        <div wicket:id="feedback" class="feedback"></div>
+        <wicket:child/>
+    </main>
+</div>
+</body>
+</html>

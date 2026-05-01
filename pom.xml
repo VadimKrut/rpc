@@ -23,6 +23,8 @@
         <asm.version>9.8</asm.version>
         <junit.jupiter.version>5.12.2</junit.jupiter.version>
         <spring.boot.version>4.0.6</spring.boot.version>
+        <wicket.version>10.8.0</wicket.version>
+        <jetty.version>12.0.32</jetty.version>
         <maven.plugin.api.version>3.9.9</maven.plugin.api.version>
         <maven.plugin.tools.version>3.15.1</maven.plugin.tools.version>
         <maven.compiler.plugin.version>3.14.1</maven.compiler.plugin.version>
@@ -199,6 +201,26 @@
                 <artifactId>junit-jupiter</artifactId>
                 <version>${junit.jupiter.version}</version>
             </dependency>
+            <dependency>
+                <groupId>org.apache.wicket</groupId>
+                <artifactId>wicket-core</artifactId>
+                <version>${wicket.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.wicket</groupId>
+                <artifactId>wicket-request</artifactId>
+                <version>${wicket.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.eclipse.jetty</groupId>
+                <artifactId>jetty-server</artifactId>
+                <version>${jetty.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.eclipse.jetty.ee10</groupId>
+                <artifactId>jetty-ee10-servlet</artifactId>
+                <version>${jetty.version}</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 
@@ -212,6 +234,7 @@
         <module>server</module>
         <module>bootstrap</module>
         <module>admin</module>
+        <module>admin-ui-wicket</module>
         <module>spring</module>
         <module>spring-boot-starter</module>
         <module>serialization</module>

@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html xmlns:wicket="http://wicket.apache.org">
+<body class="login-body">
+<main class="login-shell">
+    <section class="login-card">
+        <div class="login-header">
+            <div class="brand-mark">rpc</div>
+            <div>
+                <h1 wicket:id="applicationName">RPC Admin Console</h1>
+                <p wicket:id="caption">Описание</p>
+            </div>
+        </div>
+        <div wicket:id="feedback" class="feedback"></div>
+        <form wicket:id="loginForm" class="login-form">
+            <label class="field-label" for="accessToken">Ключ доступа</label>
+            <input wicket:id="accessToken" id="accessToken" type="password" class="text-input"/>
+            <button type="submit" class="primary-action full-width">Открыть консоль</button>
+        </form>
+    </section>
+</main>
+</body>
+</html>

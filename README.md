@@ -13,6 +13,7 @@
 - `observability`: low-overhead metrics.
 - `bootstrap`: high-level environment, annotated services and contract-aware wiring.
 - `admin`: optional in-process control-plane for runtimes, channels, clients, servers and services.
+- `admin-ui-wicket`: standalone server-side operator console over `admin`, built on Apache Wicket and embedded Jetty without Spring or a dedicated REST adapter.
 - `spring`: Spring Boot integration.
 - `spring-boot-starter`: one-dependency Spring Boot starter.
 - `serialization`: Maven plugin for DTO discovery and SBE adapter generation.
@@ -28,6 +29,7 @@ See module-specific guides:
 - [observability](./observability/README.md)
 - [bootstrap](./bootstrap/README.md)
 - [admin](./admin/README.md)
+- [admin-ui-wicket](./admin-ui-wicket/README.md)
 - [spring](./spring/README.md)
 - [spring-boot-starter](./spring-boot-starter/README.md)
 - [serialization](./serialization/README.md)
@@ -51,7 +53,7 @@ Pick only the module you need:
 <dependency>
     <groupId>ru.pathcreator.pyc</groupId>
     <artifactId>core</artifactId>
-    <version>0.0.2-SNAPSHOT</version>
+    <version>0.0.3-SNAPSHOT</version>
 </dependency>
 ```
 
@@ -61,7 +63,7 @@ Or use a higher-level module:
 <dependency>
     <groupId>ru.pathcreator.pyc</groupId>
     <artifactId>bootstrap</artifactId>
-    <version>0.0.2-SNAPSHOT</version>
+    <version>0.0.3-SNAPSHOT</version>
 </dependency>
 ```
 
@@ -71,7 +73,17 @@ Optional admin-plane:
 <dependency>
     <groupId>ru.pathcreator.pyc</groupId>
     <artifactId>admin</artifactId>
-    <version>0.0.2-SNAPSHOT</version>
+    <version>0.0.3-SNAPSHOT</version>
+</dependency>
+```
+
+Standalone admin UI:
+
+```xml
+<dependency>
+    <groupId>ru.pathcreator.pyc</groupId>
+    <artifactId>admin-ui-wicket</artifactId>
+    <version>0.0.3-SNAPSHOT</version>
 </dependency>
 ```
 
@@ -81,7 +93,7 @@ For Spring Boot:
 <dependency>
     <groupId>ru.pathcreator.pyc</groupId>
     <artifactId>spring-boot-starter</artifactId>
-    <version>0.0.2-SNAPSHOT</version>
+    <version>0.0.3-SNAPSHOT</version>
 </dependency>
 ```
 
