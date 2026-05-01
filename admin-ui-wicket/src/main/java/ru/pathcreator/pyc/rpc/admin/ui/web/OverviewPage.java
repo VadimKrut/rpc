@@ -20,39 +20,56 @@ public final class OverviewPage extends BasePage {
         final RpcAdminSummarySnapshot summary = dashboard.snapshot().summary();
         final ProcessTelemetrySnapshot telemetry = dashboard.telemetry();
 
+        this.add(new Label("summarySectionTitle", this.t("overview.summary.title")));
+        this.add(new Label("generatedAtLabel", this.t("overview.summary.generatedAt")));
         this.add(new Label("generatedAt", UiFormatters.instant(dashboard.snapshot().createdAtEpochMs())));
         this.add(new ListView<>("summaryCards", List.of(
-                new MetricCard("Контуры выполнения", UiFormatters.integer(summary.runtimeCount()), "Активные экземпляры runtime", "primary"),
-                new MetricCard("Каналы", UiFormatters.integer(summary.channelCount()), "Всего каналов под наблюдением", "primary"),
-                new MetricCard("Каналы в работе", UiFormatters.integer(summary.activeChannelCount()), "Готовы принимать и отправлять трафик", "success"),
-                new MetricCard("Каналы на паузе", UiFormatters.integer(summary.pausedChannelCount()), "Остановлены оператором", "warning"),
-                new MetricCard("Клиенты", UiFormatters.integer(summary.clientCount()), "Прокси и ручные клиентские контуры", "primary"),
-                new MetricCard("Серверы", UiFormatters.integer(summary.serverCount()), "Серверные регистрации", "primary"),
-                new MetricCard("Сервисы", UiFormatters.integer(summary.serviceCount()), "Экспортированные RPC-сервисы", "primary")
+                new MetricCard("overview.metrics.runtimes.title", UiFormatters.integer(summary.runtimeCount()), "overview.metrics.runtimes.hint", "primary"),
+                new MetricCard("overview.metrics.channels.title", UiFormatters.integer(summary.channelCount()), "overview.metrics.channels.hint", "primary"),
+                new MetricCard("overview.metrics.activeChannels.title", UiFormatters.integer(summary.activeChannelCount()), "overview.metrics.activeChannels.hint", "success"),
+                new MetricCard("overview.metrics.pausedChannels.title", UiFormatters.integer(summary.pausedChannelCount()), "overview.metrics.pausedChannels.hint", "warning"),
+                new MetricCard("overview.metrics.clients.title", UiFormatters.integer(summary.clientCount()), "overview.metrics.clients.hint", "primary"),
+                new MetricCard("overview.metrics.servers.title", UiFormatters.integer(summary.serverCount()), "overview.metrics.servers.hint", "primary"),
+                new MetricCard("overview.metrics.services.title", UiFormatters.integer(summary.serviceCount()), "overview.metrics.services.hint", "primary")
         )) {
             @Override
             protected void populateItem(final ListItem<MetricCard> item) {
                 item.add(AttributeModifier.append("class", "metric-" + item.getModelObject().tone()));
-                item.add(new Label("title", item.getModelObject().title()));
+                item.add(new Label("title", OverviewPage.this.t(item.getModelObject().titleKey())));
                 item.add(new Label("value", item.getModelObject().value()));
-                item.add(new Label("hint", item.getModelObject().hint()));
+                item.add(new Label("hint", OverviewPage.this.t(item.getModelObject().hintKey())));
             }
         });
+
+        this.add(new Label("telemetrySectionTitle", this.t("overview.telemetry.title")));
+        this.add(new Label("telemetrySectionDescription", this.t("overview.telemetry.description")));
         this.add(new ListView<>("telemetryCards", List.of(
-                new MetricCard("CPU процесса", UiFormatters.percent(telemetry.processCpuLoadPercent()), "Загрузка JVM-процесса", "neutral"),
-                new MetricCard("CPU узла", UiFormatters.percent(telemetry.systemCpuLoadPercent()), "Суммарная загрузка машины", "neutral"),
-                new MetricCard("Heap занят", UiFormatters.bytes(telemetry.heapUsedBytes()), "Из " + UiFormatters.bytes(telemetry.heapCommittedBytes()), "neutral"),
-                new MetricCard("Потоки JVM", UiFormatters.integer(telemetry.liveThreadCount()), "Количество активных потоков", "neutral"),
-                new MetricCard("Время работы", UiFormatters.duration(telemetry.uptime()), "С момента старта процесса", "neutral")
+                new MetricCard("overview.telemetry.processCpu.title", UiFormatters.percent(telemetry.processCpuLoadPercent()), "overview.telemetry.processCpu.hint", "neutral"),
+                new MetricCard("overview.telemetry.systemCpu.title", UiFormatters.percent(telemetry.systemCpuLoadPercent()), "overview.telemetry.systemCpu.hint", "neutral"),
+                new MetricCard("overview.telemetry.heapUsed.title", UiFormatters.bytes(telemetry.heapUsedBytes()), "overview.telemetry.heapUsed.hintPrefix:" + UiFormatters.bytes(telemetry.heapCommittedBytes()), "neutral"),
+                new MetricCard("overview.telemetry.threads.title", UiFormatters.integer(telemetry.liveThreadCount()), "overview.telemetry.threads.hint", "neutral"),
+                new MetricCard("overview.telemetry.uptime.title", UiFormatters.duration(telemetry.uptime()), "overview.telemetry.uptime.hint", "neutral")
         )) {
             @Override
             protected void populateItem(final ListItem<MetricCard> item) {
                 item.add(AttributeModifier.append("class", "metric-" + item.getModelObject().tone()));
-                item.add(new Label("title", item.getModelObject().title()));
+                item.add(new Label("title", OverviewPage.this.t(item.getModelObject().titleKey())));
                 item.add(new Label("value", item.getModelObject().value()));
-                item.add(new Label("hint", item.getModelObject().hint()));
+                final String hintKey = item.getModelObject().hintKey();
+                final String hint = hintKey.startsWith("overview.telemetry.heapUsed.hintPrefix:")
+                        ? OverviewPage.this.t("overview.telemetry.heapUsed.hintPrefix") + " " + hintKey.substring(hintKey.indexOf(':') + 1)
+                        : OverviewPage.this.t(hintKey);
+                item.add(new Label("hint", hint));
             }
         });
+
+        this.add(new Label("runtimeSectionTitle", this.t("overview.runtime.title")));
+        this.add(new Label("runtimeSectionDescription", this.t("overview.runtime.description")));
+        this.add(new Label("runtimeHeaderName", this.t("overview.runtime.header.name")));
+        this.add(new Label("runtimeHeaderId", this.t("overview.runtime.header.id")));
+        this.add(new Label("runtimeHeaderDirectory", this.t("overview.runtime.header.directory")));
+        this.add(new Label("runtimeHeaderState", this.t("overview.runtime.header.state")));
+        this.add(new Label("runtimeHeaderChannels", this.t("overview.runtime.header.channels")));
         this.add(new ListView<>("runtimeRows", dashboard.snapshot().runtimes()) {
             @Override
             protected void populateItem(final ListItem<RpcAdminRuntimeSnapshot> item) {
@@ -60,36 +77,47 @@ public final class OverviewPage extends BasePage {
                 item.add(new Label("name", runtime.name()));
                 item.add(new Label("runtimeId", runtime.runtimeId()));
                 item.add(new Label("aeronDirectory", runtime.aeronDirectoryName()));
-                item.add(new Label("closed", runtime.closed() ? "Закрыт" : "Работает"));
+                item.add(new Label("closed", OverviewPage.this.t(runtime.closed() ? "state.closed" : "state.running")));
                 item.add(new Label("channelCount", UiFormatters.integer(runtime.channelCount())));
             }
         });
+
+        this.add(new Label("channelSectionTitle", this.t("overview.channels.title")));
+        this.add(new Label("channelSectionDescription", this.t("overview.channels.description")));
+        this.add(new Label("channelHeaderName", this.t("overview.channels.header.name")));
+        this.add(new Label("channelHeaderState", this.t("overview.channels.header.state")));
+        this.add(new Label("channelHeaderTraffic", this.t("overview.channels.header.traffic")));
+        this.add(new Label("channelHeaderTimeouts", this.t("overview.channels.header.timeouts")));
+        this.add(new Label("channelHeaderWaiters", this.t("overview.channels.header.waiters")));
+        this.add(new Label("channelHeaderActivity", this.t("overview.channels.header.activity")));
         this.add(new ListView<>("channelRows", dashboard.snapshot().channels()) {
             @Override
             protected void populateItem(final ListItem<RpcAdminChannelSnapshot> item) {
                 final RpcAdminChannelSnapshot channel = item.getModelObject();
                 item.add(new Label("name", channel.environmentName() + "/" + channel.profileName()));
-                item.add(new Label("state", channel.closed() ? "Закрыт" : channel.paused() ? "На паузе" : "Активен"));
+                item.add(new Label("state", OverviewPage.this.t(channel.closed()
+                        ? "state.closed"
+                        : channel.paused() ? "state.paused" : "state.active")));
                 item.add(new Label("traffic", UiFormatters.bytes(channel.bytesIn()) + " / " + UiFormatters.bytes(channel.bytesOut())));
                 item.add(new Label("timeouts", UiFormatters.integer(channel.publishTimeouts()) + " / " + UiFormatters.integer(channel.callTimeouts())));
                 item.add(new Label("waiters", channel.waitersCapacity() == 0
-                        ? "Н/Д"
-                        : UiFormatters.integer(channel.currentWaiters()) + " из " + UiFormatters.integer(channel.waitersCapacity())));
+                        ? OverviewPage.this.t("common.notAvailable")
+                        : UiFormatters.integer(channel.currentWaiters()) + " / " + UiFormatters.integer(channel.waitersCapacity())));
                 item.add(new Label("activity", UiFormatters.instant(channel.lastActivityAtEpochMs())));
             }
         });
     }
 
     @Override
-    protected String pageTitle() {
-        return "Операционный обзор";
+    protected String pageTitleKey() {
+        return "overview.pageTitle";
     }
 
     @Override
-    protected String pageDescription() {
-        return "Главный экран для текущего состояния среды, ресурсоёмкости процесса, эксплуатационных признаков перегрузки и связности каналов в едином контуре наблюдения.";
+    protected String pageDescriptionKey() {
+        return "overview.pageDescription";
     }
 
-    private record MetricCard(String title, String value, String hint, String tone) {
+    private record MetricCard(String titleKey, String value, String hintKey, String tone) {
     }
 }

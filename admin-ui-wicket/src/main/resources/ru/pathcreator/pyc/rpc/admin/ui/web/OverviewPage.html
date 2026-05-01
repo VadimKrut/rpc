@@ -5,15 +5,16 @@
     <section class="section-card">
         <div class="section-header">
             <div>
-                <h2>Сводка состояния</h2>
-                <p>Снимок сформирован: <span wicket:id="generatedAt">01.01.2026 10:00:00</span></p>
+                <h2 wicket:id="summarySectionTitle">Summary</h2>
+                <p><span wicket:id="generatedAtLabel">Generated at</span>: <span wicket:id="generatedAt">01.01.2026 10:00:00</span>
+                </p>
             </div>
         </div>
         <ul class="metric-grid">
             <li wicket:id="summaryCards" class="metric-card">
-                <div class="metric-title" wicket:id="title">Контуры выполнения</div>
+                <div class="metric-title" wicket:id="title">Runtimes</div>
                 <div class="metric-value" wicket:id="value">1</div>
-                <div class="metric-hint" wicket:id="hint">Активные экземпляры runtime</div>
+                <div class="metric-hint" wicket:id="hint">Hint</div>
             </li>
         </ul>
     </section>
@@ -21,15 +22,15 @@
     <section class="section-card">
         <div class="section-header">
             <div>
-                <h2>Процесс и память</h2>
-                <p>Показатели снимаются локально с JVM и операционной системы хоста, на котором поднята консоль.</p>
+                <h2 wicket:id="telemetrySectionTitle">Process and Memory</h2>
+                <p wicket:id="telemetrySectionDescription">Description</p>
             </div>
         </div>
         <ul class="metric-grid telemetry-grid">
             <li wicket:id="telemetryCards" class="metric-card">
-                <div class="metric-title" wicket:id="title">CPU процесса</div>
+                <div class="metric-title" wicket:id="title">CPU</div>
                 <div class="metric-value" wicket:id="value">0%</div>
-                <div class="metric-hint" wicket:id="hint">Загрузка JVM-процесса</div>
+                <div class="metric-hint" wicket:id="hint">Hint</div>
             </li>
         </ul>
     </section>
@@ -37,26 +38,26 @@
     <section class="section-card">
         <div class="section-header">
             <div>
-                <h2>Контуры выполнения</h2>
-                <p>Базовая привязка к runtime и рабочим директориям transport-уровня.</p>
+                <h2 wicket:id="runtimeSectionTitle">Runtimes</h2>
+                <p wicket:id="runtimeSectionDescription">Description</p>
             </div>
         </div>
         <table class="data-table">
             <thead>
             <tr>
-                <th>Имя</th>
-                <th>Runtime ID</th>
-                <th>Каталог Aeron</th>
-                <th>Состояние</th>
-                <th>Каналы</th>
+                <th wicket:id="runtimeHeaderName">Name</th>
+                <th wicket:id="runtimeHeaderId">Runtime ID</th>
+                <th wicket:id="runtimeHeaderDirectory">Aeron Directory</th>
+                <th wicket:id="runtimeHeaderState">State</th>
+                <th wicket:id="runtimeHeaderChannels">Channels</th>
             </tr>
             </thead>
             <tbody>
             <tr wicket:id="runtimeRows">
-                <td wicket:id="name">vpn-runtime</td>
+                <td wicket:id="name">runtime</td>
                 <td wicket:id="runtimeId">runtime-1</td>
                 <td wicket:id="aeronDirectory">rpc-xxxx</td>
-                <td wicket:id="closed">Работает</td>
+                <td wicket:id="closed">Running</td>
                 <td wicket:id="channelCount">2</td>
             </tr>
             </tbody>
@@ -66,29 +67,29 @@
     <section class="section-card">
         <div class="section-header">
             <div>
-                <h2>Каналы под наблюдением</h2>
-                <p>Краткий эксплуатационный срез до перехода на детальный экран каналов.</p>
+                <h2 wicket:id="channelSectionTitle">Channels</h2>
+                <p wicket:id="channelSectionDescription">Description</p>
             </div>
         </div>
         <table class="data-table">
             <thead>
             <tr>
-                <th>Канал</th>
-                <th>Состояние</th>
-                <th>Трафик вход/выход</th>
-                <th>Timeouts publish/call</th>
-                <th>Очередь waiters</th>
-                <th>Последняя активность</th>
+                <th wicket:id="channelHeaderName">Channel</th>
+                <th wicket:id="channelHeaderState">State</th>
+                <th wicket:id="channelHeaderTraffic">Traffic</th>
+                <th wicket:id="channelHeaderTimeouts">Timeouts</th>
+                <th wicket:id="channelHeaderWaiters">Waiters</th>
+                <th wicket:id="channelHeaderActivity">Last Activity</th>
             </tr>
             </thead>
             <tbody>
             <tr wicket:id="channelRows">
-                <td wicket:id="name">vpn-environment/vpn-server</td>
-                <td wicket:id="state">Активен</td>
-                <td wicket:id="traffic">0 Б / 0 Б</td>
+                <td wicket:id="name">env/server</td>
+                <td wicket:id="state">Active</td>
+                <td wicket:id="traffic">0 B / 0 B</td>
                 <td wicket:id="timeouts">0 / 0</td>
-                <td wicket:id="waiters">0 из 0</td>
-                <td wicket:id="activity">Н/Д</td>
+                <td wicket:id="waiters">0 / 0</td>
+                <td wicket:id="activity">N/A</td>
             </tr>
             </tbody>
         </table>

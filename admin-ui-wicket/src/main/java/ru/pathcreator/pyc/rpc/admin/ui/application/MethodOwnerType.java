@@ -1,17 +1,17 @@
 package ru.pathcreator.pyc.rpc.admin.ui.application;
 
 public enum MethodOwnerType {
-    SERVICE("Сервисный метод"),
-    SERVER("Серверный метод"),
-    CLIENT("Клиентский метод");
+    SERVICE("owner.service"),
+    SERVER("owner.server"),
+    CLIENT("owner.client");
 
-    private final String displayName;
+    private final String messageKey;
 
-    MethodOwnerType(final String displayName) {
-        this.displayName = displayName;
+    MethodOwnerType(final String messageKey) {
+        this.messageKey = messageKey;
     }
 
-    public String displayName() {
-        return this.displayName;
+    public String messageKey() {
+        return this.messageKey;
     }
 }

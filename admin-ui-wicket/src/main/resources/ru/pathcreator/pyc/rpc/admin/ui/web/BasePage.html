@@ -7,27 +7,36 @@
             <div class="brand-mark">rpc</div>
             <div>
                 <div class="brand-title" wicket:id="applicationName">RPC Admin Console</div>
-                <div class="brand-subtitle">Операторская консоль</div>
+                <div class="brand-subtitle" wicket:id="brandSubtitle">Operator Console</div>
             </div>
         </div>
         <nav class="nav">
-            <a wicket:id="overviewLink" class="nav-link">Операционный обзор</a>
-            <a wicket:id="channelsLink" class="nav-link">Каналы и связность</a>
-            <a wicket:id="methodsLink" class="nav-link">Сервисы и методы</a>
+            <a wicket:id="overviewLink" class="nav-link"><span wicket:id="overviewLinkLabel">Overview</span></a>
+            <a wicket:id="channelsLink" class="nav-link"><span wicket:id="channelsLinkLabel">Channels</span></a>
+            <a wicket:id="methodsLink" class="nav-link"><span wicket:id="methodsLinkLabel">Methods</span></a>
         </nav>
-        <div class="sidebar-footnote">
-            Независимый UI-модуль над <code>rpc-admin</code> без Spring и без выделенного REST API.
-        </div>
+        <div class="sidebar-footnote" wicket:id="sidebarFootnote">Standalone UI over rpc-admin.</div>
     </aside>
     <main class="main">
         <header class="topbar">
             <div>
-                <h1 class="page-title" wicket:id="pageTitle">Операционный обзор</h1>
-                <p class="page-description" wicket:id="pageDescription">Описание экрана</p>
+                <h1 class="page-title" wicket:id="pageTitle">Overview</h1>
+                <p class="page-description" wicket:id="pageDescription">Page description</p>
             </div>
-            <div class="topbar-actions">
-                <a wicket:id="refresh" class="secondary-action">Обновить</a>
-                <a wicket:id="logout" class="primary-action">Выйти</a>
+            <div class="topbar-controls">
+                <div class="language-switch">
+                    <span class="language-switch-label" wicket:id="languageSwitcherLabel">Language</span>
+                    <ul class="language-list">
+                        <li wicket:id="languageItems">
+                            <a wicket:id="languageLink" class="language-link"><span
+                                    wicket:id="languageLabel">English</span></a>
+                        </li>
+                    </ul>
+                </div>
+                <div class="topbar-actions">
+                    <a wicket:id="refresh" class="secondary-action"><span wicket:id="refreshLabel">Refresh</span></a>
+                    <a wicket:id="logout" class="primary-action"><span wicket:id="logoutLabel">Logout</span></a>
+                </div>
             </div>
         </header>
         <div wicket:id="feedback" class="feedback"></div>

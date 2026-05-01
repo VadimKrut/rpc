@@ -3,18 +3,29 @@
 <body class="login-body">
 <main class="login-shell">
     <section class="login-card">
+        <div class="login-toolbar">
+            <div class="language-switch">
+                <span class="language-switch-label" wicket:id="languageSwitcherLabel">Language</span>
+                <ul class="language-list">
+                    <li wicket:id="languageItems">
+                        <a wicket:id="languageLink" class="language-link"><span wicket:id="languageLabel">English</span></a>
+                    </li>
+                </ul>
+            </div>
+        </div>
         <div class="login-header">
             <div class="brand-mark">rpc</div>
             <div>
                 <h1 wicket:id="applicationName">RPC Admin Console</h1>
-                <p wicket:id="caption">Описание</p>
+                <p wicket:id="caption">Caption</p>
             </div>
         </div>
         <div wicket:id="feedback" class="feedback"></div>
         <form wicket:id="loginForm" class="login-form">
-            <label class="field-label" for="accessToken">Ключ доступа</label>
+            <label class="field-label" for="accessToken" wicket:id="tokenLabel">Access Token</label>
             <input wicket:id="accessToken" id="accessToken" type="password" class="text-input"/>
-            <button type="submit" class="primary-action full-width">Открыть консоль</button>
+            <button type="submit" class="primary-action full-width"><span wicket:id="submitLabel">Open Console</span>
+            </button>
         </form>
     </section>
 </main>

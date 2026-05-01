@@ -5,67 +5,65 @@
     <section class="section-card">
         <div class="section-header">
             <div>
-                <h2>Каналы и связность</h2>
-                <p>Каждая карточка показывает topology, transport-настройки, признаки давления и операторское состояние
-                    канала.</p>
+                <h2 wicket:id="sectionTitle">Channels and Connectivity</h2>
+                <p wicket:id="sectionDescription">Description</p>
             </div>
         </div>
         <div class="channel-grid">
             <article wicket:id="channelCards" class="channel-card">
                 <div class="channel-header">
                     <div>
-                        <h3 wicket:id="headline">vpn-environment/vpn-server</h3>
+                        <h3 wicket:id="headline">env/server</h3>
                         <div class="channel-meta">
-                            <span wicket:id="channelName">vpn-server</span>
-                            <span wicket:id="runtimeName">vpn-runtime</span>
+                            <span wicket:id="channelName">channel</span>
+                            <span wicket:id="runtimeName">runtime</span>
                             <span wicket:id="streamId">stream 7001</span>
                         </div>
                     </div>
-                    <div class="state-pill" wicket:id="state">Активен</div>
+                    <div class="state-pill" wicket:id="state">Active</div>
                 </div>
                 <div class="channel-route">
                     <div>
-                        <div class="route-label">Publication</div>
+                        <div class="route-label" wicket:id="publicationLabel">Publication</div>
                         <div class="route-value" wicket:id="publicationChannel">aeron:udp?endpoint=localhost:39002</div>
                     </div>
                     <div>
-                        <div class="route-label">Subscription</div>
+                        <div class="route-label" wicket:id="subscriptionLabel">Subscription</div>
                         <div class="route-value" wicket:id="subscriptionChannel">aeron:udp?endpoint=localhost:39001
                         </div>
                     </div>
                 </div>
                 <dl class="channel-metrics">
                     <div>
-                        <dt>Трафик вход/выход</dt>
-                        <dd wicket:id="traffic">0 Б / 0 Б</dd>
+                        <dt wicket:id="trafficLabel">Traffic In / Out</dt>
+                        <dd wicket:id="traffic">0 B / 0 B</dd>
                     </div>
                     <div>
-                        <dt>Запросы/ответы</dt>
+                        <dt wicket:id="requestsLabel">Requests / Responses</dt>
                         <dd wicket:id="requests">0 / 0</dd>
                     </div>
                     <div>
-                        <dt>Timeouts publish/call</dt>
+                        <dt wicket:id="timeoutsLabel">Publish / Call Timeouts</dt>
                         <dd wicket:id="timeouts">0 / 0</dd>
                     </div>
                     <div>
-                        <dt>Насыщение waiters</dt>
+                        <dt wicket:id="waitersLabel">Waiters Saturation</dt>
                         <dd wicket:id="waiters">0%</dd>
                     </div>
                     <div>
-                        <dt>Память канала</dt>
-                        <dd wicket:id="memory">0 Б</dd>
+                        <dt wicket:id="memoryLabel">Channel Memory</dt>
+                        <dd wicket:id="memory">0 B</dd>
                     </div>
                     <div>
-                        <dt>Последняя активность</dt>
-                        <dd wicket:id="activity">Н/Д</dd>
+                        <dt wicket:id="activityLabel">Last Activity</dt>
+                        <dd wicket:id="activity">N/A</dd>
                     </div>
                 </dl>
                 <div class="channel-actions">
                     <form wicket:id="actionForm">
-                        <button wicket:id="actionButton" type="submit" class="primary-action">Поставить на паузу
-                        </button>
+                        <button wicket:id="actionButton" type="submit" class="primary-action">Pause</button>
                     </form>
-                    <span wicket:id="closedHint" class="muted-note">Закрытые каналы доступны только для чтения.</span>
+                    <span wicket:id="closedHint" class="muted-note"><span wicket:id="closedHintLabel">Closed channels are read only.</span></span>
                 </div>
             </article>
         </div>

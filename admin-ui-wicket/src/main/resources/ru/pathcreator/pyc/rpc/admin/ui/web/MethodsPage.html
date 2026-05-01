@@ -5,32 +5,31 @@
     <section class="section-card">
         <div class="section-header">
             <div>
-                <h2>Реестр сервисов</h2>
-                <p>Сервисный слой — единственное место, где доступны операции включения и отключения отдельных
-                    методов.</p>
+                <h2 wicket:id="serviceSectionTitle">Services Registry</h2>
+                <p wicket:id="serviceSectionDescription">Description</p>
             </div>
         </div>
         <table class="data-table">
             <thead>
             <tr>
-                <th>Сервис</th>
-                <th>Размещение</th>
-                <th>Канал</th>
-                <th>Состояние</th>
-                <th>Методы</th>
-                <th>Операция</th>
+                <th wicket:id="serviceHeaderName">Service</th>
+                <th wicket:id="serviceHeaderLocation">Location</th>
+                <th wicket:id="serviceHeaderChannel">Channel</th>
+                <th wicket:id="serviceHeaderState">State</th>
+                <th wicket:id="serviceHeaderMethods">Methods</th>
+                <th wicket:id="serviceHeaderAction">Action</th>
             </tr>
             </thead>
             <tbody>
             <tr wicket:id="serviceRows">
-                <td wicket:id="name">vpn.gateway</td>
-                <td wicket:id="location">vpn-environment/vpn-server</td>
+                <td wicket:id="name">service</td>
+                <td wicket:id="location">env/server</td>
                 <td wicket:id="channelId">channel:1</td>
-                <td wicket:id="state">Включен</td>
+                <td wicket:id="state">Enabled</td>
                 <td wicket:id="methodCount">1</td>
                 <td>
                     <form wicket:id="actionForm">
-                        <button wicket:id="actionButton" type="submit" class="secondary-action">Отключить</button>
+                        <button wicket:id="actionButton" type="submit" class="secondary-action">Disable</button>
                     </form>
                 </td>
             </tr>
@@ -41,32 +40,31 @@
     <section class="section-card">
         <div class="section-header">
             <div>
-                <h2>Серверные контуры</h2>
-                <p>Серверная метрика латентности показывает только обработку на стороне исполнителя, без клиентского
-                    round-trip.</p>
+                <h2 wicket:id="serverSectionTitle">Server Contours</h2>
+                <p wicket:id="serverSectionDescription">Description</p>
             </div>
         </div>
         <table class="data-table">
             <thead>
             <tr>
-                <th>Сервер</th>
-                <th>Размещение</th>
-                <th>Канал</th>
-                <th>Состояние</th>
-                <th>Запросы</th>
-                <th>Операция</th>
+                <th wicket:id="serverHeaderName">Server</th>
+                <th wicket:id="serverHeaderLocation">Location</th>
+                <th wicket:id="serverHeaderChannel">Channel</th>
+                <th wicket:id="serverHeaderState">State</th>
+                <th wicket:id="serverHeaderRequests">Requests</th>
+                <th wicket:id="serverHeaderAction">Action</th>
             </tr>
             </thead>
             <tbody>
             <tr wicket:id="serverRows">
-                <td wicket:id="name">vpn-server</td>
-                <td wicket:id="location">vpn-environment/vpn-server</td>
+                <td wicket:id="name">server</td>
+                <td wicket:id="location">env/server</td>
                 <td wicket:id="channelId">channel:1</td>
-                <td wicket:id="state">Включен</td>
+                <td wicket:id="state">Enabled</td>
                 <td wicket:id="requestCount">0</td>
                 <td>
                     <form wicket:id="actionForm">
-                        <button wicket:id="actionButton" type="submit" class="secondary-action">Отключить</button>
+                        <button wicket:id="actionButton" type="submit" class="secondary-action">Disable</button>
                     </form>
                 </td>
             </tr>
@@ -77,31 +75,31 @@
     <section class="section-card">
         <div class="section-header">
             <div>
-                <h2>Клиентские контуры</h2>
-                <p>Клиентская латентность включает публикацию запроса, ожидание ответа и полное время round-trip.</p>
+                <h2 wicket:id="clientSectionTitle">Client Contours</h2>
+                <p wicket:id="clientSectionDescription">Description</p>
             </div>
         </div>
         <table class="data-table">
             <thead>
             <tr>
-                <th>Клиент</th>
-                <th>Размещение</th>
-                <th>Канал</th>
-                <th>Состояние</th>
-                <th>Вызовы</th>
-                <th>Операция</th>
+                <th wicket:id="clientHeaderName">Client</th>
+                <th wicket:id="clientHeaderLocation">Location</th>
+                <th wicket:id="clientHeaderChannel">Channel</th>
+                <th wicket:id="clientHeaderState">State</th>
+                <th wicket:id="clientHeaderCalls">Calls</th>
+                <th wicket:id="clientHeaderAction">Action</th>
             </tr>
             </thead>
             <tbody>
             <tr wicket:id="clientRows">
-                <td wicket:id="name">vpn-client</td>
-                <td wicket:id="location">vpn-environment/vpn-client</td>
+                <td wicket:id="name">client</td>
+                <td wicket:id="location">env/client</td>
                 <td wicket:id="channelId">channel:2</td>
-                <td wicket:id="state">Включен</td>
+                <td wicket:id="state">Enabled</td>
                 <td wicket:id="callCount">0</td>
                 <td>
                     <form wicket:id="actionForm">
-                        <button wicket:id="actionButton" type="submit" class="secondary-action">Отключить</button>
+                        <button wicket:id="actionButton" type="submit" class="secondary-action">Disable</button>
                     </form>
                 </td>
             </tr>
@@ -112,33 +110,32 @@
     <section class="section-card">
         <div class="section-header">
             <div>
-                <h2>Каталог методов</h2>
-                <p>В таблице ниже сервисные методы управляемы, а клиентские и серверные строки доступны для диагностики
-                    и аудита без изменения состояния.</p>
+                <h2 wicket:id="catalogSectionTitle">Methods Catalog</h2>
+                <p wicket:id="catalogSectionDescription">Description</p>
             </div>
         </div>
         <table class="data-table">
             <thead>
             <tr>
-                <th>Метод</th>
-                <th>Тип</th>
-                <th>Сигнатура</th>
-                <th>Состояние</th>
-                <th>Канал</th>
-                <th>Вызовы</th>
-                <th>Успех / ошибка</th>
-                <th>Remote / timeout</th>
-                <th>Средняя / пик</th>
-                <th>Последняя ошибка</th>
-                <th>Операция</th>
+                <th wicket:id="catalogHeaderMethod">Method</th>
+                <th wicket:id="catalogHeaderType">Type</th>
+                <th wicket:id="catalogHeaderSignature">Signature</th>
+                <th wicket:id="catalogHeaderState">State</th>
+                <th wicket:id="catalogHeaderChannel">Channel</th>
+                <th wicket:id="catalogHeaderCalls">Calls</th>
+                <th wicket:id="catalogHeaderSuccessFailure">Success / Failure</th>
+                <th wicket:id="catalogHeaderRemoteTimeout">Remote / Timeout</th>
+                <th wicket:id="catalogHeaderLatency">Average / Peak</th>
+                <th wicket:id="catalogHeaderLastFailure">Last Failure</th>
+                <th wicket:id="catalogHeaderAction">Action</th>
             </tr>
             </thead>
             <tbody>
             <tr wicket:id="methodRows">
-                <td wicket:id="ownerName">vpn.gateway.handshake</td>
-                <td wicket:id="ownerType">Сервисный метод</td>
+                <td wicket:id="ownerName">method</td>
+                <td wicket:id="ownerType">type</td>
                 <td wicket:id="signature">msg 4101 -&gt; 4201</td>
-                <td wicket:id="state">Включено</td>
+                <td wicket:id="state">Enabled</td>
                 <td wicket:id="channelId">channel:1</td>
                 <td wicket:id="calls">0</td>
                 <td wicket:id="successFailure">0 / 0</td>
@@ -147,9 +144,9 @@
                 <td wicket:id="lastFailure">—</td>
                 <td>
                     <form wicket:id="actionForm">
-                        <button wicket:id="actionButton" type="submit" class="secondary-action">Отключить</button>
+                        <button wicket:id="actionButton" type="submit" class="secondary-action">Disable</button>
                     </form>
-                    <span wicket:id="readonlyLabel" class="muted-note">Только чтение</span>
+                    <span wicket:id="readonlyLabel" class="muted-note">Read only</span>
                 </td>
             </tr>
             </tbody>

@@ -12,7 +12,8 @@
     <artifactId>admin-ui-wicket</artifactId>
     <packaging>jar</packaging>
     <name>rpc-admin-ui-wicket</name>
-    <description>Standalone Apache Wicket administrative console over the rpc-admin module without Spring or REST dependencies.
+    <description>Standalone Apache Wicket administrative console over the rpc-admin module without Spring or REST
+        dependencies.
     </description>
 
     <dependencies>
@@ -29,6 +30,10 @@
             <artifactId>wicket-request</artifactId>
         </dependency>
         <dependency>
+            <groupId>org.apache.wicket</groupId>
+            <artifactId>wicket-util</artifactId>
+        </dependency>
+        <dependency>
             <groupId>org.eclipse.jetty</groupId>
             <artifactId>jetty-server</artifactId>
         </dependency>
@@ -37,8 +42,18 @@
             <artifactId>jetty-ee10-servlet</artifactId>
         </dependency>
         <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+        <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.wicket</groupId>
+            <artifactId>wicket-tester</artifactId>
+            <version>${wicket.version}</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
