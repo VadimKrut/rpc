@@ -20,6 +20,7 @@ import ru.pathcreator.pyc.rpc.core.serialization.RpcCodecSupport;
 import ru.pathcreator.pyc.rpc.encryption.RpcPayloadEncryption;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 
 public final class RpcClient {
@@ -27,15 +28,17 @@ public final class RpcClient {
     private final RpcChannel channel;
     private final long defaultTimeoutNs;
     private final boolean fastPathEligible;
-    private final boolean listenerEnabled;
     private final boolean payloadEncryptionEnabled;
     private final Object bindingsLock = new Object();
+    private final Object listenersLock = new Object();
     private final List<RpcClientInterceptor> interceptors;
-    private final RpcClientListener listener;
     private final RpcPayloadEncryption payloadEncryption;
     private final RpcClientRequestValidator requestValidator;
     private final RpcClientResponseValidator responseValidator;
+    private final List<RpcClientListener> listeners = new ArrayList<>();
     private volatile Int2ObjectHashMap<ClientMethodBinding<?, ?>> bindings = new Int2ObjectHashMap<>();
+    private volatile RpcClientListener listener = RpcClientListener.NOOP;
+    private volatile boolean enabled = true;
     private final ThreadLocal<ExpandableArrayBuffer> requestBuffers = ThreadLocal.withInitial(() -> new ExpandableArrayBuffer(512));
     private final ThreadLocal<ExpandableArrayBuffer> plainRequestBuffers = ThreadLocal.withInitial(() -> new ExpandableArrayBuffer(512));
     private final ThreadLocal<ExpandableArrayBuffer> decryptedResponseBuffers = ThreadLocal.withInitial(() -> new ExpandableArrayBuffer(512));
@@ -54,13 +57,15 @@ public final class RpcClient {
         this.requestValidator = requestValidator;
         this.responseValidator = responseValidator;
         this.interceptors = interceptors;
-        this.listener = listener;
         this.payloadEncryption = payloadEncryption;
-        this.listenerEnabled = listener != RpcClientListener.NOOP;
         this.payloadEncryptionEnabled = payloadEncryption != RpcPayloadEncryption.NOOP;
         this.fastPathEligible = interceptors.isEmpty()
                                 && requestValidator == RpcClientRequestValidator.NOOP
                                 && responseValidator == RpcClientResponseValidator.NOOP;
+        if (listener != RpcClientListener.NOOP) {
+            this.listeners.add(listener);
+            this.listener = listener;
+        }
     }
 
     public static RpcClientBuilder builder(
@@ -106,6 +111,50 @@ public final class RpcClient {
             final long timeoutNs
     ) {
         return this.bind(method).exchange(request, timeoutNs);
+    }
+
+    public RpcChannel channel() {
+        return this.channel;
+    }
+
+    public long defaultTimeoutNs() {
+        return this.defaultTimeoutNs;
+    }
+
+    public boolean isEnabled() {
+        return this.enabled;
+    }
+
+    public void enable() {
+        this.enabled = true;
+    }
+
+    public void disable() {
+        this.enabled = false;
+    }
+
+    public void addListener(
+            final RpcClientListener listener
+    ) {
+        if (listener == null) {
+            throw new IllegalArgumentException("listener must not be null");
+        }
+        synchronized (this.listenersLock) {
+            this.listeners.add(listener);
+            this.listener = composeListeners(this.listeners);
+        }
+    }
+
+    public void removeListener(
+            final RpcClientListener listener
+    ) {
+        if (listener == null) {
+            throw new IllegalArgumentException("listener must not be null");
+        }
+        synchronized (this.listenersLock) {
+            this.listeners.remove(listener);
+            this.listener = composeListeners(this.listeners);
+        }
     }
 
     @SuppressWarnings("unchecked")
@@ -187,11 +236,15 @@ public final class RpcClient {
             if (request == null) {
                 throw new IllegalArgumentException("request must not be null");
             }
+            if (!RpcClient.this.enabled) {
+                throw new IllegalStateException("client disabled");
+            }
             if (timeoutNs <= 0L) {
                 throw new IllegalArgumentException("timeoutNs must be > 0");
             }
-            final long startNs = RpcClient.this.listenerEnabled ? System.nanoTime() : 0L;
-            if (RpcClient.this.listenerEnabled) {
+            final boolean listenerEnabled = RpcClient.this.listener != RpcClientListener.NOOP;
+            final long startNs = listenerEnabled ? System.nanoTime() : 0L;
+            if (listenerEnabled) {
                 RpcClient.this.listener.onStart(this.method, timeoutNs);
             }
             try {
@@ -211,11 +264,15 @@ public final class RpcClient {
             if (request == null) {
                 throw new IllegalArgumentException("request must not be null");
             }
+            if (!RpcClient.this.enabled) {
+                throw new IllegalStateException("client disabled");
+            }
             if (timeoutNs <= 0L) {
                 throw new IllegalArgumentException("timeoutNs must be > 0");
             }
-            final long startNs = RpcClient.this.listenerEnabled ? System.nanoTime() : 0L;
-            if (RpcClient.this.listenerEnabled) {
+            final boolean listenerEnabled = RpcClient.this.listener != RpcClientListener.NOOP;
+            final long startNs = listenerEnabled ? System.nanoTime() : 0L;
+            if (listenerEnabled) {
                 RpcClient.this.listener.onStart(this.method, timeoutNs);
             }
             try {
@@ -382,7 +439,7 @@ public final class RpcClient {
                 final long startNs,
                 final RpcClientResult<R> result
         ) {
-            if (!RpcClient.this.listenerEnabled) {
+            if (RpcClient.this.listener == RpcClientListener.NOOP) {
                 return;
             }
             final long latencyNs = System.nanoTime() - startNs;
@@ -410,7 +467,7 @@ public final class RpcClient {
                 final long startNs,
                 final Throwable error
         ) {
-            if (!RpcClient.this.listenerEnabled) {
+            if (RpcClient.this.listener == RpcClientListener.NOOP) {
                 return;
             }
             RpcClient.this.listener.onFailure(
@@ -420,5 +477,63 @@ public final class RpcClient {
                     error
             );
         }
+    }
+
+    private static RpcClientListener composeListeners(
+            final List<RpcClientListener> listeners
+    ) {
+        if (listeners.isEmpty()) {
+            return RpcClientListener.NOOP;
+        }
+        if (listeners.size() == 1) {
+            return listeners.getFirst();
+        }
+        final List<RpcClientListener> snapshot = List.copyOf(listeners);
+        return new RpcClientListener() {
+            @Override
+            public void onSuccess(
+                    final RpcMethodContract<?, ?> method,
+                    final long timeoutNs,
+                    final long latencyNs,
+                    final int responsePayloadLength,
+                    final int statusCode
+            ) {
+                for (final RpcClientListener listener : snapshot) {
+                    listener.onSuccess(method, timeoutNs, latencyNs, responsePayloadLength, statusCode);
+                }
+            }
+
+            @Override
+            public void onStart(final RpcMethodContract<?, ?> method, final long timeoutNs) {
+                for (final RpcClientListener listener : snapshot) {
+                    listener.onStart(method, timeoutNs);
+                }
+            }
+
+            @Override
+            public void onRemoteError(
+                    final RpcMethodContract<?, ?> method,
+                    final long timeoutNs,
+                    final long latencyNs,
+                    final int responsePayloadLength,
+                    final int statusCode
+            ) {
+                for (final RpcClientListener listener : snapshot) {
+                    listener.onRemoteError(method, timeoutNs, latencyNs, responsePayloadLength, statusCode);
+                }
+            }
+
+            @Override
+            public void onFailure(
+                    final RpcMethodContract<?, ?> method,
+                    final long timeoutNs,
+                    final long latencyNs,
+                    final Throwable error
+            ) {
+                for (final RpcClientListener listener : snapshot) {
+                    listener.onFailure(method, timeoutNs, latencyNs, error);
+                }
+            }
+        };
     }
 }

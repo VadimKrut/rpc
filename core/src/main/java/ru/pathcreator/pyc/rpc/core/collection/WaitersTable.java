@@ -39,6 +39,10 @@ public final class WaitersTable {
         return this.size;
     }
 
+    public int capacity() {
+        return this.values.length;
+    }
+
     public WrapperThread get(
             final long key
     ) {

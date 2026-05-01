@@ -39,7 +39,7 @@ public final class RpcBenchmarkMain {
         final int measureSeconds = args.length > 2 ? Integer.parseInt(args[2]) : 5;
         final int fragmentLimit = args.length > 3 ? Integer.parseInt(args[3]) : 32;
         final int listenerMaxYields = args.length > 4 ? Integer.parseInt(args[4]) : 512;
-        final int publisherMaxYields = args.length > 5 ? Integer.parseInt(args[5]) : 20_000;
+        final int publisherMaxYields = args.length > 5 ? Integer.parseInt(args[5]) : 512;
         final int waitersInitialCapacity = args.length > 6 ? Integer.parseInt(args[6]) : 1_048_576;
         final float waitersLoadFactor = args.length > 7 ? Float.parseFloat(args[7]) : 0.75f;
 

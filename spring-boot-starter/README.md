@@ -8,7 +8,7 @@
 <dependency>
     <groupId>ru.pathcreator.pyc</groupId>
     <artifactId>spring-boot-starter</artifactId>
-    <version>0.0.1</version>
+    <version>0.0.2-SNAPSHOT</version>
 </dependency>
 ```
 

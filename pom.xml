@@ -8,14 +8,15 @@
     <version>${revision}</version>
     <packaging>pom</packaging>
     <name>rpc-parent</name>
-    <description>Low-latency modular RPC stack with Aeron transport, contract-first bootstrap, encryption, observability and Spring Boot integration.
+    <description>Low-latency modular RPC stack with Aeron transport, contract-first bootstrap, encryption, observability
+        and Spring Boot integration.
     </description>
     <url>https://github.com/${env.GITHUB_REPOSITORY}</url>
     <inceptionYear>2026</inceptionYear>
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <revision>0.0.1</revision>
+        <revision>0.0.2-SNAPSHOT</revision>
         <maven.compiler.release>25</maven.compiler.release>
         <aeron.version>1.50.4</aeron.version>
         <agrona.version>2.4.1</agrona.version>
@@ -30,6 +31,7 @@
         <maven.plugin.plugin.version>3.15.1</maven.plugin.plugin.version>
         <maven.source.plugin.version>3.3.1</maven.source.plugin.version>
         <maven.deploy.plugin.version>3.1.4</maven.deploy.plugin.version>
+        <maven.antrun.plugin.version>3.1.0</maven.antrun.plugin.version>
     </properties>
 
     <licenses>
@@ -122,6 +124,11 @@
             </dependency>
             <dependency>
                 <groupId>ru.pathcreator.pyc</groupId>
+                <artifactId>admin</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>ru.pathcreator.pyc</groupId>
                 <artifactId>spring</artifactId>
                 <version>${project.version}</version>
             </dependency>
@@ -204,6 +211,7 @@
         <module>observability</module>
         <module>server</module>
         <module>bootstrap</module>
+        <module>admin</module>
         <module>spring</module>
         <module>spring-boot-starter</module>
         <module>serialization</module>
@@ -238,12 +246,43 @@
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-antrun-plugin</artifactId>
+                    <version>${maven.antrun.plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-plugin-plugin</artifactId>
                     <version>${maven.plugin.plugin.version}</version>
                 </plugin>
             </plugins>
         </pluginManagement>
         <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>sync-readme-versions</id>
+                        <phase>initialize</phase>
+                        <configuration>
+                            <target>
+                                <replaceregexp
+                                        byline="true"
+                                        match="&lt;version&gt;[^&lt;]+&lt;/version&gt;"
+                                        replace="&lt;version&gt;${project.version}&lt;/version&gt;">
+                                    <fileset dir="${maven.multiModuleProjectDirectory}">
+                                        <include name="README.md"/>
+                                        <include name="*/README.md"/>
+                                    </fileset>
+                                </replaceregexp>
+                            </target>
+                        </configuration>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-source-plugin</artifactId>

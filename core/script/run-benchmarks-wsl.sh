@@ -8,15 +8,15 @@ TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 OUT_DIR="${1:-$ROOT_DIR/benchmark-runs/$TIMESTAMP}"
 
 AERON_JAR="${AERON_JAR:-$HOME/.m2/repository/io/aeron/aeron-all/1.50.4/aeron-all-1.50.4.jar}"
-AGRONA_JAR="${AGRONA_JAR:-$HOME/.m2/repository/org/agrona/agrona/2.4.0/agrona-2.4.0.jar}"
+AGRONA_JAR="${AGRONA_JAR:-$HOME/.m2/repository/org/agrona/agrona/2.4.1/agrona-2.4.1.jar}"
 ASPROF="${ASPROF:-$HOME/.local/opt/async-profiler/bin/asprof}"
 
 WARMUP_SECONDS="${WARMUP_SECONDS:-1}"
 MEASURE_SECONDS="${MEASURE_SECONDS:-5}"
 PROFILE_WARMUP_SECONDS="${PROFILE_WARMUP_SECONDS:-2}"
 PROFILE_MEASURE_SECONDS="${PROFILE_MEASURE_SECONDS:-8}"
-FRAGMENT_LIMIT="${FRAGMENT_LIMIT:-32}"
-LISTENER_MAX_YIELDS="${LISTENER_MAX_YIELDS:-512}"
+FRAGMENT_LIMIT="${FRAGMENT_LIMIT:-256}"
+LISTENER_MAX_YIELDS="${LISTENER_MAX_YIELDS:-20000}"
 PUBLISHER_MAX_YIELDS="${PUBLISHER_MAX_YIELDS:-20000}"
 WAITERS_INITIAL_CAPACITY="${WAITERS_INITIAL_CAPACITY:-1048576}"
 WAITERS_LOAD_FACTOR="${WAITERS_LOAD_FACTOR:-0.75}"
@@ -24,7 +24,7 @@ CHANNELS_LIST="${CHANNELS_LIST:-1 4 8}"
 
 mkdir -p "$OUT_DIR"
 
-mvn -q -pl core -am -DskipTests compile
+mvn -q -f "$ROOT_DIR/pom.xml" -pl core -am -DskipTests compile
 
 CP="$MODULE_DIR/target/classes:$AERON_JAR:$AGRONA_JAR"
 JAVA_OPTS=(--add-exports java.base/jdk.internal.misc=ALL-UNNAMED -cp "$CP")

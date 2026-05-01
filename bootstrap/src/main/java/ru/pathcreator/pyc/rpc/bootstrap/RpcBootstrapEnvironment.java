@@ -17,6 +17,7 @@ import ru.pathcreator.pyc.rpc.server.listener.RpcServerListener;
 import ru.pathcreator.pyc.rpc.server.pipeline.RpcServerInterceptor;
 import ru.pathcreator.pyc.rpc.server.pipeline.RpcServerRequestValidator;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -29,6 +30,7 @@ public final class RpcBootstrapEnvironment {
     private final Map<String, java.util.Set<String>> registeredServiceNames = new LinkedHashMap<>();
     private final Map<String, Map<Integer, String>> requestMethodOwners = new LinkedHashMap<>();
     private final Map<String, Map<Integer, String>> responseMethodOwners = new LinkedHashMap<>();
+    private final Map<String, List<RegisteredServiceSnapshot>> registeredServices = new LinkedHashMap<>();
 
     RpcBootstrapEnvironment(
             final Map<String, ProfileConfig> profiles
@@ -86,6 +88,7 @@ public final class RpcBootstrapEnvironment {
         }
         final RpcAnnotatedService<T> service = RpcBootstrap.introspect(serviceType);
         this.ensureUniqueMethodIds(service);
+        this.registerServiceSnapshot(service);
         RpcBootstrapServerBuilder.register(this.server(service.channelName()), serviceType, implementation);
         return this;
     }
@@ -109,6 +112,36 @@ public final class RpcBootstrapEnvironment {
             final String profileName
     ) {
         return this.profiles.containsKey(profileName);
+    }
+
+    public synchronized List<String> profileNames() {
+        return List.copyOf(this.profiles.keySet());
+    }
+
+    public synchronized RpcChannel channel(
+            final String profileName
+    ) {
+        return this.requireProfile(profileName).channel();
+    }
+
+    public synchronized RpcClient clientIfPresent(
+            final String profileName
+    ) {
+        return this.clients.get(profileName);
+    }
+
+    public synchronized RpcServer serverIfPresent(
+            final String profileName
+    ) {
+        return this.servers.get(profileName);
+    }
+
+    public synchronized List<RegisteredServiceSnapshot> registeredServices() {
+        final List<RegisteredServiceSnapshot> snapshots = new ArrayList<>();
+        for (final List<RegisteredServiceSnapshot> services : this.registeredServices.values()) {
+            snapshots.addAll(services);
+        }
+        return List.copyOf(snapshots);
     }
 
     private RpcClient buildClient(
@@ -282,6 +315,24 @@ public final class RpcBootstrapEnvironment {
         return this.service((Class<T>) serviceType, (T) implementation);
     }
 
+    private void registerServiceSnapshot(
+            final RpcAnnotatedService<?> service
+    ) {
+        final List<RegisteredMethodSnapshot> methods = new ArrayList<>(service.methods().size());
+        for (final RpcAnnotatedMethod method : service.methods()) {
+            methods.add(
+                    new RegisteredMethodSnapshot(
+                            method.contract().name(),
+                            method.contract().requestMessageTypeId(),
+                            method.contract().responseMessageTypeId()
+                    )
+            );
+        }
+        this.registeredServices
+                .computeIfAbsent(service.channelName(), ignored -> new ArrayList<>())
+                .add(new RegisteredServiceSnapshot(service.channelName(), service.contract().name(), List.copyOf(methods)));
+    }
+
     static record ProfileConfig(
             String name,
             RpcChannel channel,
@@ -298,6 +349,20 @@ public final class RpcBootstrapEnvironment {
             RpcServerListener serverListener,
             RpcServerMetrics serverMetrics,
             RpcPayloadEncryption serverPayloadEncryption
+    ) {
+    }
+
+    public record RegisteredServiceSnapshot(
+            String profileName,
+            String serviceName,
+            List<RegisteredMethodSnapshot> methods
+    ) {
+    }
+
+    public record RegisteredMethodSnapshot(
+            String methodName,
+            int requestMessageTypeId,
+            int responseMessageTypeId
     ) {
     }
 }

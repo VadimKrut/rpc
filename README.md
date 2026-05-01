@@ -12,6 +12,7 @@
 - `server`: typed RPC server dispatcher.
 - `observability`: low-overhead metrics.
 - `bootstrap`: high-level environment, annotated services and contract-aware wiring.
+- `admin`: optional in-process control-plane for runtimes, channels, clients, servers and services.
 - `spring`: Spring Boot integration.
 - `spring-boot-starter`: one-dependency Spring Boot starter.
 - `serialization`: Maven plugin for DTO discovery and SBE adapter generation.
@@ -26,6 +27,7 @@ See module-specific guides:
 - [server](./server/README.md)
 - [observability](./observability/README.md)
 - [bootstrap](./bootstrap/README.md)
+- [admin](./admin/README.md)
 - [spring](./spring/README.md)
 - [spring-boot-starter](./spring-boot-starter/README.md)
 - [serialization](./serialization/README.md)
@@ -38,7 +40,7 @@ Repository:
 <repositories>
     <repository>
         <id>github</id>
-        <url>https://maven.pkg.github.com/OWNER/REPOSITORY</url>
+        <url>https://maven.pkg.github.com/VadimKrut/rpc</url>
     </repository>
 </repositories>
 ```
@@ -49,7 +51,7 @@ Pick only the module you need:
 <dependency>
     <groupId>ru.pathcreator.pyc</groupId>
     <artifactId>core</artifactId>
-    <version>0.0.1</version>
+    <version>0.0.2-SNAPSHOT</version>
 </dependency>
 ```
 
@@ -59,7 +61,17 @@ Or use a higher-level module:
 <dependency>
     <groupId>ru.pathcreator.pyc</groupId>
     <artifactId>bootstrap</artifactId>
-    <version>0.0.1</version>
+    <version>0.0.2-SNAPSHOT</version>
+</dependency>
+```
+
+Optional admin-plane:
+
+```xml
+<dependency>
+    <groupId>ru.pathcreator.pyc</groupId>
+    <artifactId>admin</artifactId>
+    <version>0.0.2-SNAPSHOT</version>
 </dependency>
 ```
 
@@ -69,7 +81,7 @@ For Spring Boot:
 <dependency>
     <groupId>ru.pathcreator.pyc</groupId>
     <artifactId>spring-boot-starter</artifactId>
-    <version>0.0.1</version>
+    <version>0.0.2-SNAPSHOT</version>
 </dependency>
 ```
 
@@ -95,10 +107,12 @@ Wire it with bootstrap:
 ```java
 final RpcBootstrapEnvironment serverEnv = RpcBootstrap.environment()
         .channel("secure", serverChannel)
+        .done()
         .build();
 
 final RpcBootstrapEnvironment clientEnv = RpcBootstrap.environment()
         .channel("secure", clientChannel)
+        .done()
         .build();
 
 serverEnv.service(new OrderServiceImpl());

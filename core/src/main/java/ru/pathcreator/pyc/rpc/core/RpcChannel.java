@@ -21,15 +21,22 @@ import ru.pathcreator.pyc.rpc.core.exception.RpcPublishTimeoutException;
 import ru.pathcreator.pyc.rpc.core.exception.RpcRemoteException;
 import ru.pathcreator.pyc.rpc.core.generator.CorrelationIdGenerator;
 import ru.pathcreator.pyc.rpc.core.generator.YieldThenParkIdleStrategy;
+import ru.pathcreator.pyc.rpc.core.listener.RpcChannelListener;
 import ru.pathcreator.pyc.rpc.core.serialization.RpcCodecSupport;
 import ru.pathcreator.pyc.rpc.core.serialization.RpcDtoHandler;
 import ru.pathcreator.pyc.rpc.core.wrapper.WrapperThread;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.LockSupport;
 
 public final class RpcChannel implements AutoCloseable {
 
+    private static final AtomicLong IDS = new AtomicLong();
+
+    private final long channelId;
     private final WaitersTable waiters;
     private final Thread listenerThread;
     private final RpcChannelConfig config;
@@ -40,13 +47,18 @@ public final class RpcChannel implements AutoCloseable {
     private final ThreadLocal<YieldThenParkIdleStrategy> publisherIdleStrategies;
     private final CorrelationIdGenerator correlationIds = new CorrelationIdGenerator();
     private final Int2ObjectHashMap<RpcRequestHandler> requestHandlers = new Int2ObjectHashMap<>();
+    private final Object listenersLock = new Object();
+    private final List<RpcChannelListener> listeners = new ArrayList<>();
 
+    private volatile RpcChannelListener listener = RpcChannelListener.NOOP;
     private volatile boolean running;
+    private volatile boolean paused;
 
     RpcChannel(
             final Aeron aeron,
             final RpcChannelConfig config
     ) {
+        this.channelId = IDS.incrementAndGet();
         this.config = config;
         this.publication = aeron.addPublication(config.publicationChannel(), config.streamId());
         this.subscription = aeron.addSubscription(config.subscriptionChannel(), config.streamId());
@@ -64,6 +76,76 @@ public final class RpcChannel implements AutoCloseable {
         );
         this.listenerThread = new Thread(this::listenerLoop, "rpc-channel-listener-" + config.streamId());
         this.listenerThread.start();
+    }
+
+    public long channelId() {
+        return this.channelId;
+    }
+
+    public RpcChannelConfig config() {
+        return this.config;
+    }
+
+    public int currentWaiters() {
+        return this.waiters.size();
+    }
+
+    public int waitersCapacity() {
+        return this.waiters.capacity();
+    }
+
+    public boolean isPaused() {
+        return this.paused;
+    }
+
+    public boolean isClosed() {
+        return !this.running;
+    }
+
+    public long estimatedOwnedMemoryBytes() {
+        return (long) this.waiters.capacity() * (Long.BYTES + 16L);
+    }
+
+    public void pause() {
+        if (!this.running || this.paused) {
+            return;
+        }
+        this.paused = true;
+        this.listener.onPaused();
+        this.listenerThread.interrupt();
+    }
+
+    public void resume() {
+        if (!this.running || !this.paused) {
+            return;
+        }
+        this.paused = false;
+        this.listener.onResumed();
+        LockSupport.unpark(this.listenerThread);
+    }
+
+    public void addListener(
+            final RpcChannelListener listener
+    ) {
+        if (listener == null) {
+            throw new IllegalArgumentException("listener must not be null");
+        }
+        synchronized (this.listenersLock) {
+            this.listeners.add(listener);
+            this.listener = compose(this.listeners);
+        }
+    }
+
+    public void removeListener(
+            final RpcChannelListener listener
+    ) {
+        if (listener == null) {
+            throw new IllegalArgumentException("listener must not be null");
+        }
+        synchronized (this.listenersLock) {
+            this.listeners.remove(listener);
+            this.listener = compose(this.listeners);
+        }
     }
 
     public void registerRequestHandler(
@@ -203,6 +285,7 @@ public final class RpcChannel implements AutoCloseable {
         }
         this.publication.close();
         this.subscription.close();
+        this.listener.onClosed();
     }
 
     private void publish(
@@ -219,11 +302,20 @@ public final class RpcChannel implements AutoCloseable {
         idleStrategy.reset();
         RpcEnvelope.encode(flags, statusCode, payloadLength, requestMessageTypeId, correlationId, requestBuffer);
         while (this.running) {
+            if (this.paused) {
+                throw new IllegalStateException("channel paused");
+            }
             final long result = this.publication.offer(requestBuffer, 0, totalLength);
             if (result > 0) {
+                if ((flags & RpcEnvelope.FLAG_RESPONSE) == 0) {
+                    this.listener.onRequestSent(requestMessageTypeId, payloadLength, correlationId);
+                } else {
+                    this.listener.onResponseSent(requestMessageTypeId, payloadLength, statusCode, correlationId);
+                }
                 return;
             }
             if (deadline != Long.MAX_VALUE && System.nanoTime() >= deadline) {
+                this.listener.onPublishTimeout(requestMessageTypeId, payloadLength, correlationId);
                 throw new RpcPublishTimeoutException(correlationId);
             }
             idleStrategy.idle();
@@ -235,6 +327,11 @@ public final class RpcChannel implements AutoCloseable {
         final YieldThenParkIdleStrategy idleStrategy = this.listenerIdleStrategy;
         idleStrategy.reset();
         while (this.running) {
+            if (this.paused) {
+                LockSupport.parkNanos(1_000_000L);
+                idleStrategy.reset();
+                continue;
+            }
             final int fragments = this.subscription.poll(this.fragmentHandler, this.config.fragmentLimit());
             if (fragments == 0) {
                 idleStrategy.idle();
@@ -260,6 +357,7 @@ public final class RpcChannel implements AutoCloseable {
             if (payloadLength < 0 || payloadLength > length - RpcEnvelope.HEADER_LENGTH) {
                 return;
             }
+            this.listener.onRequestReceived(RpcEnvelope.messageTypeId(offset, buffer), payloadLength, correlationId);
             final RpcRequestHandler handler = this.requestHandlers.get(RpcEnvelope.messageTypeId(offset, buffer));
             if (handler != null) {
                 handler.handle(offset + RpcEnvelope.HEADER_LENGTH, payloadLength, correlationId, buffer);
@@ -270,6 +368,12 @@ public final class RpcChannel implements AutoCloseable {
         if (wrapper == null) {
             return;
         }
+        this.listener.onResponseReceived(
+                RpcEnvelope.messageTypeId(offset, buffer),
+                RpcEnvelope.payloadLength(offset, buffer),
+                RpcEnvelope.statusCode(offset, buffer),
+                correlationId
+        );
         wrapper.wrap(offset, length, buffer);
         LockSupport.unpark(wrapper.thread());
     }
@@ -283,6 +387,7 @@ public final class RpcChannel implements AutoCloseable {
             final long remaining = deadline - System.nanoTime();
             if (remaining <= 0L) {
                 if (this.waiters.remove(correlationId) == wrapper) {
+                    this.listener.onCallTimeout(correlationId);
                     throw new RpcCallTimeoutException(correlationId);
                 }
                 continue;
@@ -355,5 +460,81 @@ public final class RpcChannel implements AutoCloseable {
         final byte[] text = new byte[length];
         buffer.getBytes(RpcEnvelope.HEADER_LENGTH, text);
         return new String(text, StandardCharsets.UTF_8);
+    }
+
+    private static RpcChannelListener compose(
+            final List<RpcChannelListener> listeners
+    ) {
+        if (listeners.isEmpty()) {
+            return RpcChannelListener.NOOP;
+        }
+        if (listeners.size() == 1) {
+            return listeners.getFirst();
+        }
+        final List<RpcChannelListener> snapshot = List.copyOf(listeners);
+        return new RpcChannelListener() {
+            @Override
+            public void onRequestSent(final int messageTypeId, final int payloadLength, final long correlationId) {
+                for (final RpcChannelListener listener : snapshot) {
+                    listener.onRequestSent(messageTypeId, payloadLength, correlationId);
+                }
+            }
+
+            @Override
+            public void onRequestReceived(final int messageTypeId, final int payloadLength, final long correlationId) {
+                for (final RpcChannelListener listener : snapshot) {
+                    listener.onRequestReceived(messageTypeId, payloadLength, correlationId);
+                }
+            }
+
+            @Override
+            public void onResponseSent(final int messageTypeId, final int payloadLength, final int statusCode, final long correlationId) {
+                for (final RpcChannelListener listener : snapshot) {
+                    listener.onResponseSent(messageTypeId, payloadLength, statusCode, correlationId);
+                }
+            }
+
+            @Override
+            public void onResponseReceived(final int messageTypeId, final int payloadLength, final int statusCode, final long correlationId) {
+                for (final RpcChannelListener listener : snapshot) {
+                    listener.onResponseReceived(messageTypeId, payloadLength, statusCode, correlationId);
+                }
+            }
+
+            @Override
+            public void onPublishTimeout(final int messageTypeId, final int payloadLength, final long correlationId) {
+                for (final RpcChannelListener listener : snapshot) {
+                    listener.onPublishTimeout(messageTypeId, payloadLength, correlationId);
+                }
+            }
+
+            @Override
+            public void onCallTimeout(final long correlationId) {
+                for (final RpcChannelListener listener : snapshot) {
+                    listener.onCallTimeout(correlationId);
+                }
+            }
+
+            @Override
+            public void onPaused() {
+                for (final RpcChannelListener listener : snapshot) {
+                    listener.onPaused();
+                }
+            }
+
+            @Override
+            public void onResumed() {
+                for (final RpcChannelListener listener : snapshot) {
+                    listener.onResumed();
+                }
+            }
+
+            @Override
+            public void onClosed() {
+                for (final RpcChannelListener listener : snapshot) {
+                    listener.onClosed();
+                }
+            }
+        };
     }
 }

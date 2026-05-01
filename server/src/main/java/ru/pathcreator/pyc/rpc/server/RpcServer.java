@@ -1,6 +1,7 @@
 package ru.pathcreator.pyc.rpc.server;
 
 import org.agrona.ExpandableArrayBuffer;
+import org.agrona.collections.Int2ObjectHashMap;
 import org.agrona.collections.IntHashSet;
 import ru.pathcreator.pyc.rpc.codec.SerializationCodec;
 import ru.pathcreator.pyc.rpc.contract.RpcMethodContract;
@@ -12,6 +13,7 @@ import ru.pathcreator.pyc.rpc.encryption.RpcPayloadEncryption;
 import ru.pathcreator.pyc.rpc.server.context.RpcServerContext;
 import ru.pathcreator.pyc.rpc.server.error.RpcServerErrorResponse;
 import ru.pathcreator.pyc.rpc.server.error.RpcServerExceptionMapper;
+import ru.pathcreator.pyc.rpc.server.error.RpcStatusException;
 import ru.pathcreator.pyc.rpc.server.handler.RpcServerContextHandler;
 import ru.pathcreator.pyc.rpc.server.handler.RpcServerHandler;
 import ru.pathcreator.pyc.rpc.server.listener.RpcServerListener;
@@ -19,6 +21,7 @@ import ru.pathcreator.pyc.rpc.server.pipeline.RpcServerInterceptor;
 import ru.pathcreator.pyc.rpc.server.pipeline.RpcServerInvocation;
 import ru.pathcreator.pyc.rpc.server.pipeline.RpcServerRequestValidator;
 
+import java.util.ArrayList;
 import java.util.List;
 
 public final class RpcServer {
@@ -27,14 +30,17 @@ public final class RpcServer {
     private final List<RpcServerInterceptor> interceptors;
     private final RpcServerExceptionMapper exceptionMapper;
     private final RpcServerRequestValidator requestValidator;
-    private final RpcServerListener listener;
-    private final boolean listenerEnabled;
+    private final Object listenersLock = new Object();
     private final boolean payloadEncryptionEnabled;
     private final RpcPayloadEncryption payloadEncryption;
+    private final List<RpcServerListener> listeners = new ArrayList<>();
     private final IntHashSet registeredRequestMessageTypeIds = new IntHashSet();
+    private final Int2ObjectHashMap<RegisteredMethod> registeredMethods = new Int2ObjectHashMap<>();
     private final ThreadLocal<ExpandableArrayBuffer> responseBuffers = ThreadLocal.withInitial(() -> new ExpandableArrayBuffer(512));
     private final ThreadLocal<ExpandableArrayBuffer> plainResponseBuffers = ThreadLocal.withInitial(() -> new ExpandableArrayBuffer(512));
     private final ThreadLocal<ExpandableArrayBuffer> decryptedRequestBuffers = ThreadLocal.withInitial(() -> new ExpandableArrayBuffer(512));
+    private volatile RpcServerListener listener = RpcServerListener.NOOP;
+    private volatile boolean enabled = true;
 
     RpcServer(
             final RpcChannel channel,
@@ -48,16 +54,86 @@ public final class RpcServer {
         this.exceptionMapper = exceptionMapper;
         this.requestValidator = requestValidator;
         this.interceptors = interceptors;
-        this.listener = listener;
         this.payloadEncryption = payloadEncryption;
-        this.listenerEnabled = listener != RpcServerListener.NOOP;
         this.payloadEncryptionEnabled = payloadEncryption != RpcPayloadEncryption.NOOP;
+        if (listener != RpcServerListener.NOOP) {
+            this.listeners.add(listener);
+            this.listener = listener;
+        }
     }
 
     public static RpcServerBuilder builder(
             final RpcChannel channel
     ) {
         return new RpcServerBuilder(channel);
+    }
+
+    public RpcChannel channel() {
+        return this.channel;
+    }
+
+    public boolean isEnabled() {
+        return this.enabled;
+    }
+
+    public void enable() {
+        this.enabled = true;
+    }
+
+    public void disable() {
+        this.enabled = false;
+    }
+
+    public void addListener(
+            final RpcServerListener listener
+    ) {
+        if (listener == null) {
+            throw new IllegalArgumentException("listener must not be null");
+        }
+        synchronized (this.listenersLock) {
+            this.listeners.add(listener);
+            this.listener = composeListeners(this.listeners);
+        }
+    }
+
+    public void removeListener(
+            final RpcServerListener listener
+    ) {
+        if (listener == null) {
+            throw new IllegalArgumentException("listener must not be null");
+        }
+        synchronized (this.listenersLock) {
+            this.listeners.remove(listener);
+            this.listener = composeListeners(this.listeners);
+        }
+    }
+
+    public void enableMethod(
+            final int requestMessageTypeId
+    ) {
+        final RegisteredMethod method = this.registeredMethods.get(requestMessageTypeId);
+        if (method == null) {
+            throw new IllegalArgumentException("requestMessageTypeId is not registered: " + requestMessageTypeId);
+        }
+        method.enabled = true;
+    }
+
+    public void disableMethod(
+            final int requestMessageTypeId
+    ) {
+        final RegisteredMethod method = this.registeredMethods.get(requestMessageTypeId);
+        if (method == null) {
+            throw new IllegalArgumentException("requestMessageTypeId is not registered: " + requestMessageTypeId);
+        }
+        method.enabled = false;
+    }
+
+    public List<RegisteredMethodSnapshot> registeredMethods() {
+        final List<RegisteredMethodSnapshot> snapshots = new ArrayList<>(this.registeredMethods.size());
+        for (final RegisteredMethod method : this.registeredMethods.values()) {
+            snapshots.add(new RegisteredMethodSnapshot(method.contract, method.enabled));
+        }
+        return List.copyOf(snapshots);
     }
 
     public synchronized <Q, R> RpcServer register(
@@ -85,9 +161,12 @@ public final class RpcServer {
             final SerializationCodec<Q> requestCodec = RpcCodecSupport.codecFor(method.requestType());
             final SerializationCodec<R> responseCodec = RpcCodecSupport.codecFor(method.responseType());
             final RpcServerInvocation invocation = this.buildInvocation(method, handler);
+            final RegisteredMethod registeredMethod = new RegisteredMethod(method);
+            this.registeredMethods.put(requestMessageTypeId, registeredMethod);
             this.channel.registerRequestHandler(requestMessageTypeId, (offset, length, correlationId, buffer) -> {
-                final long startNs = this.listenerEnabled ? System.nanoTime() : 0L;
-                if (this.listenerEnabled) {
+                final boolean listenerEnabled = this.listener != RpcServerListener.NOOP;
+                final long startNs = listenerEnabled ? System.nanoTime() : 0L;
+                if (listenerEnabled) {
                     this.listener.onStart(method, correlationId, length);
                 }
                 Q request = null;
@@ -99,6 +178,9 @@ public final class RpcServer {
                         length
                 );
                 try {
+                    if (!this.enabled || !registeredMethod.enabled) {
+                        throw new RpcStatusException(RpcStatusCodes.SERVICE_UNAVAILABLE, "service unavailable");
+                    }
                     if (this.payloadEncryptionEnabled) {
                         final ExpandableArrayBuffer decryptedRequestBuffer = this.decryptedRequestBuffers.get();
                         final int decryptedLength = this.payloadEncryption.decrypt(
@@ -188,6 +270,7 @@ public final class RpcServer {
             return this;
         } catch (final RuntimeException error) {
             this.registeredRequestMessageTypeIds.remove(requestMessageTypeId);
+            this.registeredMethods.remove(requestMessageTypeId);
             throw error;
         }
     }
@@ -239,7 +322,7 @@ public final class RpcServer {
             final int requestPayloadLength,
             final int responsePayloadLength
     ) {
-        if (!this.listenerEnabled) {
+        if (this.listener == RpcServerListener.NOOP) {
             return;
         }
         this.listener.onSuccess(
@@ -261,7 +344,7 @@ public final class RpcServer {
             final int statusCode,
             final Throwable error
     ) {
-        if (!this.listenerEnabled) {
+        if (this.listener == RpcServerListener.NOOP) {
             return;
         }
         this.listener.onFailure(
@@ -278,5 +361,77 @@ public final class RpcServer {
     @SuppressWarnings("unchecked")
     private static <E extends Throwable> void throwUnchecked0(final Throwable error) throws E {
         throw (E) error;
+    }
+
+    private static RpcServerListener composeListeners(
+            final List<RpcServerListener> listeners
+    ) {
+        if (listeners.isEmpty()) {
+            return RpcServerListener.NOOP;
+        }
+        if (listeners.size() == 1) {
+            return listeners.getFirst();
+        }
+        final List<RpcServerListener> snapshot = List.copyOf(listeners);
+        return new RpcServerListener() {
+            @Override
+            public void onSuccess(
+                    final RpcMethodContract<?, ?> method,
+                    final long correlationId,
+                    final long latencyNs,
+                    final int requestPayloadLength,
+                    final int responsePayloadLength,
+                    final int statusCode
+            ) {
+                for (final RpcServerListener listener : snapshot) {
+                    listener.onSuccess(method, correlationId, latencyNs, requestPayloadLength, responsePayloadLength, statusCode);
+                }
+            }
+
+            @Override
+            public void onStart(
+                    final RpcMethodContract<?, ?> method,
+                    final long correlationId,
+                    final int requestPayloadLength
+            ) {
+                for (final RpcServerListener listener : snapshot) {
+                    listener.onStart(method, correlationId, requestPayloadLength);
+                }
+            }
+
+            @Override
+            public void onFailure(
+                    final RpcMethodContract<?, ?> method,
+                    final long correlationId,
+                    final long latencyNs,
+                    final int requestPayloadLength,
+                    final int responsePayloadLength,
+                    final int statusCode,
+                    final Throwable error
+            ) {
+                for (final RpcServerListener listener : snapshot) {
+                    listener.onFailure(method, correlationId, latencyNs, requestPayloadLength, responsePayloadLength, statusCode, error);
+                }
+            }
+        };
+    }
+
+    private static final class RegisteredMethod {
+
+        private final RpcMethodContract<?, ?> contract;
+        private volatile boolean enabled;
+
+        private RegisteredMethod(
+                final RpcMethodContract<?, ?> contract
+        ) {
+            this.contract = contract;
+            this.enabled = true;
+        }
+    }
+
+    public record RegisteredMethodSnapshot(
+            RpcMethodContract<?, ?> contract,
+            boolean enabled
+    ) {
     }
 }
