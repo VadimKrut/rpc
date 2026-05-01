@@ -8,15 +8,14 @@
     <version>${revision}</version>
     <packaging>pom</packaging>
     <name>rpc-parent</name>
-    <description>Low-latency modular RPC stack with Aeron transport, contract-first bootstrap, encryption, observability
-        and Spring Boot integration.
+    <description>Low-latency modular RPC stack with Aeron transport, contract-first bootstrap, encryption, observability and Spring Boot integration.
     </description>
     <url>https://github.com/${env.GITHUB_REPOSITORY}</url>
     <inceptionYear>2026</inceptionYear>
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <revision>0.0.2-SNAPSHOT</revision>
+        <revision>0.0.2</revision>
         <maven.compiler.release>25</maven.compiler.release>
         <aeron.version>1.50.4</aeron.version>
         <agrona.version>2.4.1</agrona.version>
@@ -32,6 +31,7 @@
         <maven.source.plugin.version>3.3.1</maven.source.plugin.version>
         <maven.deploy.plugin.version>3.1.4</maven.deploy.plugin.version>
         <maven.antrun.plugin.version>3.1.0</maven.antrun.plugin.version>
+        <flatten.maven.plugin.version>1.7.3</flatten.maven.plugin.version>
     </properties>
 
     <licenses>
@@ -254,9 +254,38 @@
                     <artifactId>maven-plugin-plugin</artifactId>
                     <version>${maven.plugin.plugin.version}</version>
                 </plugin>
+                <plugin>
+                    <groupId>org.codehaus.mojo</groupId>
+                    <artifactId>flatten-maven-plugin</artifactId>
+                    <version>${flatten.maven.plugin.version}</version>
+                </plugin>
             </plugins>
         </pluginManagement>
         <plugins>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>flatten-maven-plugin</artifactId>
+                <configuration>
+                    <updatePomFile>true</updatePomFile>
+                    <flattenMode>resolveCiFriendliesOnly</flattenMode>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>flatten</id>
+                        <phase>process-resources</phase>
+                        <goals>
+                            <goal>flatten</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>flatten.clean</id>
+                        <phase>clean</phase>
+                        <goals>
+                            <goal>clean</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-antrun-plugin</artifactId>
