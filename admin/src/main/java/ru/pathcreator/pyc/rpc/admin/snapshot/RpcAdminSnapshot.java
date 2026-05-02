@@ -1,5 +1,6 @@
 package ru.pathcreator.pyc.rpc.admin.snapshot;
 
+import java.io.Serializable;
 import java.util.List;
 
 public record RpcAdminSnapshot(
@@ -10,5 +11,5 @@ public record RpcAdminSnapshot(
         List<RpcAdminClientSnapshot> clients,
         List<RpcAdminServerSnapshot> servers,
         List<RpcAdminServiceSnapshot> services
-) {
+) implements Serializable {
 }

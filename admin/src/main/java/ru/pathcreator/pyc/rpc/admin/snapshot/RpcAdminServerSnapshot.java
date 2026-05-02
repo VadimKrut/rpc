@@ -1,5 +1,6 @@
 package ru.pathcreator.pyc.rpc.admin.snapshot;
 
+import java.io.Serializable;
 import java.util.List;
 
 public record RpcAdminServerSnapshot(
@@ -16,5 +17,5 @@ public record RpcAdminServerSnapshot(
         long maxLatencyNs,
         int registeredMethodCount,
         List<RpcAdminMethodSnapshot> methods
-) {
+) implements Serializable {
 }

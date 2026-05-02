@@ -1,5 +1,6 @@
 package ru.pathcreator.pyc.rpc.admin.snapshot;
 
+import java.io.Serializable;
 import java.util.List;
 
 public record RpcAdminRuntimeSnapshot(
@@ -10,5 +11,5 @@ public record RpcAdminRuntimeSnapshot(
         boolean closed,
         int channelCount,
         List<String> channelIds
-) {
+) implements Serializable {
 }

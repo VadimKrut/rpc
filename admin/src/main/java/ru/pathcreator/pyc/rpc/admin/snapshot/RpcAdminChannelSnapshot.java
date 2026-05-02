@@ -1,5 +1,7 @@
 package ru.pathcreator.pyc.rpc.admin.snapshot;
 
+import java.io.Serializable;
+
 public record RpcAdminChannelSnapshot(
         String id,
         String name,
@@ -24,5 +26,5 @@ public record RpcAdminChannelSnapshot(
         long publishTimeouts,
         long callTimeouts,
         long lastActivityAtEpochMs
-) {
+) implements Serializable {
 }

@@ -11,6 +11,7 @@ import ru.pathcreator.pyc.rpc.admin.ui.application.AdminConsoleDashboard;
 import ru.pathcreator.pyc.rpc.admin.ui.application.ProcessTelemetrySnapshot;
 import ru.pathcreator.pyc.rpc.admin.ui.application.UiFormatters;
 
+import java.io.Serializable;
 import java.util.List;
 
 public final class OverviewPage extends BasePage {
@@ -118,6 +119,6 @@ public final class OverviewPage extends BasePage {
         return "overview.pageDescription";
     }
 
-    private record MetricCard(String titleKey, String value, String hintKey, String tone) {
+    private record MetricCard(String titleKey, String value, String hintKey, String tone) implements Serializable {
     }
 }

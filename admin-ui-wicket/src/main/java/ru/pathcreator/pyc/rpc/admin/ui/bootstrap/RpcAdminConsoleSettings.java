@@ -1,5 +1,6 @@
 package ru.pathcreator.pyc.rpc.admin.ui.bootstrap;
 
+import java.io.Serializable;
 import java.util.Objects;
 
 public record RpcAdminConsoleSettings(
@@ -8,7 +9,7 @@ public record RpcAdminConsoleSettings(
         int port,
         String contextPath,
         boolean developmentMode
-) {
+) implements Serializable {
 
     public RpcAdminConsoleSettings {
         applicationName = Objects.requireNonNull(applicationName, "applicationName").trim();

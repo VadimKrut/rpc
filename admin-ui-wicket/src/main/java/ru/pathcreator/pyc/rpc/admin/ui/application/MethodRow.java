@@ -5,6 +5,8 @@ import ru.pathcreator.pyc.rpc.admin.snapshot.RpcAdminMethodSnapshot;
 import ru.pathcreator.pyc.rpc.admin.snapshot.RpcAdminServerSnapshot;
 import ru.pathcreator.pyc.rpc.admin.snapshot.RpcAdminServiceSnapshot;
 
+import java.io.Serializable;
+
 public record MethodRow(
         MethodOwnerType ownerType,
         String ownerId,
@@ -14,7 +16,7 @@ public record MethodRow(
         String channelId,
         boolean operationAvailable,
         RpcAdminMethodSnapshot method
-) {
+) implements Serializable {
 
     public static MethodRow serviceRow(final RpcAdminServiceSnapshot service,
                                        final RpcAdminMethodSnapshot method) {

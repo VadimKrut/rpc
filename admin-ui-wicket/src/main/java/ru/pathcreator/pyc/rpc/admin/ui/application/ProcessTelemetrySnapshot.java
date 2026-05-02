@@ -1,5 +1,6 @@
 package ru.pathcreator.pyc.rpc.admin.ui.application;
 
+import java.io.Serializable;
 import java.time.Duration;
 
 public record ProcessTelemetrySnapshot(
@@ -9,5 +10,5 @@ public record ProcessTelemetrySnapshot(
         long heapCommittedBytes,
         int liveThreadCount,
         Duration uptime
-) {
+) implements Serializable {
 }

@@ -1,5 +1,7 @@
 package ru.pathcreator.pyc.rpc.admin.snapshot;
 
+import java.io.Serializable;
+
 public record RpcAdminSummarySnapshot(
         int runtimeCount,
         int channelCount,
@@ -12,5 +14,5 @@ public record RpcAdminSummarySnapshot(
         int enabledServerCount,
         int serviceCount,
         int enabledServiceCount
-) {
+) implements Serializable {
 }
