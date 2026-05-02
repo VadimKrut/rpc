@@ -29,30 +29,29 @@ public abstract class BasePage extends WebPage {
         this.add(new Label("brandSubtitle", this.t("shell.brandSubtitle")));
         this.add(new Label("pageTitle", this.t(this.pageTitleKey())));
         this.add(new Label("pageDescription", this.t(this.pageDescriptionKey())));
-        this.add(new Label("overviewLinkLabel", this.t("nav.overview")));
-        this.add(new Label("channelsLinkLabel", this.t("nav.channels")));
-        this.add(new Label("methodsLinkLabel", this.t("nav.methods")));
         this.add(new Label("sidebarFootnote", this.t("shell.sidebarFootnote")));
-        this.add(new Label("refreshLabel", this.t("action.refresh")));
-        this.add(new Label("logoutLabel", this.t("action.logout")));
         this.add(new Label("languageSwitcherLabel", this.t("language.switcher")));
         this.add(new FeedbackPanel("feedback"));
-        this.add(this.navigationLink("overviewLink", OverviewPage.class));
-        this.add(this.navigationLink("channelsLink", ChannelsPage.class));
-        this.add(this.navigationLink("methodsLink", MethodsPage.class));
-        this.add(new Link<Void>("refresh") {
+        this.add(this.navigationLink("overviewLink", "overviewLinkLabel", "nav.overview", OverviewPage.class));
+        this.add(this.navigationLink("channelsLink", "channelsLinkLabel", "nav.channels", ChannelsPage.class));
+        this.add(this.navigationLink("methodsLink", "methodsLinkLabel", "nav.methods", MethodsPage.class));
+        final Link<Void> refreshLink = new Link<>("refresh") {
             @Override
             public void onClick() {
                 BasePage.this.setResponsePage(BasePage.this.getClass());
             }
-        });
-        this.add(new Link<Void>("logout") {
+        };
+        refreshLink.add(new Label("refreshLabel", this.t("action.refresh")));
+        this.add(refreshLink);
+        final Link<Void> logoutLink = new Link<>("logout") {
             @Override
             public void onClick() {
                 BasePage.this.adminWebSession().signOut();
                 BasePage.this.setResponsePage(LoginPage.class);
             }
-        });
+        };
+        logoutLink.add(new Label("logoutLabel", this.t("action.logout")));
+        this.add(logoutLink);
         this.add(new ListView<>("languageItems", this.application().translations().languages()) {
             @Override
             protected void populateItem(final ListItem<LanguageOption> item) {
@@ -109,11 +108,14 @@ public abstract class BasePage extends WebPage {
     }
 
     private BookmarkablePageLink<Void> navigationLink(final String id,
+                                                      final String labelId,
+                                                      final String labelKey,
                                                       final Class<? extends WebPage> pageClass) {
         final BookmarkablePageLink<Void> link = new BookmarkablePageLink<>(id, pageClass);
         if (pageClass.equals(this.getClass())) {
             link.add(AttributeModifier.append("class", "nav-link-active"));
         }
+        link.add(new Label(labelId, this.t(labelKey)));
         return link;
     }
 }
